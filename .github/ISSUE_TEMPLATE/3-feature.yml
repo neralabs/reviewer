@@ -1,0 +1,31 @@
+name: Feature request
+description: Something the reviewer should do that it doesn't.
+labels: [enhancement, needs-triage]
+type: Feature
+body:
+  - type: markdown
+    attributes:
+      value: |
+        We reply within 5 business days and decide within 10: accepted, declined, or "not now" with a reason ([response times](https://github.com/neralabs/reviewer/blob/main/CONTRIBUTING.md#response-times)).
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you're trying to do, and what gets in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: What you'd like
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+  - type: textarea
+    id: context
+    attributes:
+      label: Your setup
+      description: Provider, languages, repository size, and how your team uses the reviewer's verdicts.

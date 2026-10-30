@@ -1,0 +1,103 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  poster:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: poster
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck
+      - run: npm test
+
+  workflows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: actionlint
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
+      - name: shellcheck
+        run: shellcheck scripts/*.sh
+
+  licenses:
+    name: Licences (REUSE and copyleft gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - uses: astral-sh/setup-uv@v7
+      # Every file carries licence information and every licence it names has its text in LICENSES/.
+      - name: REUSE lint
+        run: uvx --from 'reuse[charset-normalizer]==6.2.0' reuse lint
+      # Only allowlisted (permissive) licences in LICENSES/, and no copyleft production dependency of the poster.
+      - name: Licence allowlist and copyleft gate
+        run: node scripts/check/check-licenses.mjs
+
+  internal-refs:
+    name: Internal references
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: No ticket IDs, AWS account IDs or staff addresses
+        run: node scripts/check/check-internal-refs.mjs
+
+  # The one check to require. It needs every other job and fails when any of them failed or was cancelled.
+  ci-result:
+    name: CI result
+    needs:
+      - poster
+      - workflows
+      - licenses
+      - internal-refs
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Fail when a job failed or was cancelled
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          {
+            echo "| Job | Result |"
+            echo "| --- | --- |"
+            jq -r 'to_entries | sort_by(.key) | .[] | "| \(.key) | \(.value.result) |"' <<< "$NEEDS"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          failed="$(jq -r '[to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | .key] | sort | join(", ")' <<< "$NEEDS")"
+          if [ -n "$failed" ]; then
+            echo "::error::failed or cancelled: $failed"
+            exit 1
+          fi

@@ -1,0 +1,75 @@
+name: Bug report
+description: The reviewer failed, hung, posted something broken, or did something other than what its docs say.
+labels: [bug, needs-triage]
+type: Bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A review that ran but got the code wrong? Use **Bad review** instead.
+        A vulnerability? Report it privately ([SECURITY.md](https://github.com/neralabs/reviewer/blob/main/SECURITY.md)), never here.
+
+        We reply within 5 business days and decide within 10, aiming to fix it by then ([response times](https://github.com/neralabs/reviewer/blob/main/CONTRIBUTING.md#response-times)). Leave out secrets and code you can't share.
+  - type: dropdown
+    id: visibility
+    attributes:
+      label: Caller repository visibility
+      options:
+        - Public
+        - Private or internal
+    validations:
+      required: true
+  - type: input
+    id: ref
+    attributes:
+      label: Reviewer tag or ref
+      description: The `@` ref in your caller's `uses:` line, and `reviewer_ref` if it differs.
+      placeholder: v1.2.3
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider
+      options:
+        - anthropic
+        - bedrock
+    validations:
+      required: true
+  - type: dropdown
+    id: event
+    attributes:
+      label: What triggered the run
+      options:
+        - A team review request
+        - A comment command on the pull request
+        - A reply in a finding's thread
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: run
+    attributes:
+      label: Run URL
+      description: The Actions run, if people outside your organization can open it. Otherwise leave it out and paste the relevant log lines below.
+      placeholder: https://github.com/you/repo/actions/runs/123
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what happened, and the error or relevant log lines.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you send it
+      options:
+        - label: I searched open and closed issues and this isn't one of them.
+          required: true

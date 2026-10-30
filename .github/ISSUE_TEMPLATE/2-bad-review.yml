@@ -1,0 +1,60 @@
+name: Bad review
+description: A finding was wrong, a real problem was missed, or the verdict or escalation was wrong.
+title: "[review] "
+labels: [bad-review, needs-triage]
+type: Bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The fix for a bad review is usually a prompt or policy change with a case that shows it. The smaller the example, the faster it's fixed.
+        We reply within 5 business days and decide within 10, aiming to fix it by then ([response times](https://github.com/neralabs/reviewer/blob/main/CONTRIBUTING.md#response-times)).
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What went wrong
+      options:
+        - Wrong finding (it flagged code that is fine)
+        - Missed problem (it said nothing about a real problem)
+        - Wrong verdict or escalation (approved, requested changes or escalated when it shouldn't have)
+    validations:
+      required: true
+  - type: input
+    id: pr
+    attributes:
+      label: Pull request
+      description: A link, if the repository is public. Otherwise leave it out and paste a small example below.
+      placeholder: https://github.com/you/repo/pull/123
+  - type: input
+    id: ref
+    attributes:
+      label: Reviewer tag or ref
+      placeholder: v1.2.3
+    validations:
+      required: true
+  - type: input
+    id: finding
+    attributes:
+      label: Finding
+      description: For a wrong finding, a link to its comment (the comment's `...` menu, then **Copy link**), or its title if the pull request is private. Its id is in a hidden `reviewer:finding` marker in the comment's source.
+  - type: textarea
+    id: code
+    attributes:
+      label: Code
+      description: The smallest diff or file that shows it, inside a code fence with its language. Leave it out if the pull request link above is public.
+  - type: textarea
+    id: why
+    attributes:
+      label: Why it's wrong
+      description: What the review should have said or done, and why.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you send it
+      options:
+        - label: The code above is mine to share and holds no secrets.
+          required: true
+        - label: I searched open and closed issues and this isn't one of them.
+          required: true

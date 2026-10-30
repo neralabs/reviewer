@@ -1,0 +1,89 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/neralabs/reviewer/schema/findings.schema.json",
+  "title": "Reviewer findings",
+  "description": "What the review job's model emits. Run metadata (PR, head and base SHAs, mode) is not here: the poster takes it from the gate, never from the model. Neither is the verdict: the poster derives it from the findings, risk and the low-risk rules.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["risk", "summary", "findings", "priorFindings", "escalate", "ci"],
+  "properties": {
+    "risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["level", "reasons"],
+      "properties": {
+        "level": { "enum": ["low", "medium", "high"] },
+        "reasons": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "summary": {
+      "description": "Two to five sentences in plain team voice: what the PR does, and what a reviewer most needs to know about it.",
+      "type": "string"
+    },
+    "findings": {
+      "description": "New findings at the reviewed head. On a re-review, only findings not already in priorFindings.",
+      "type": "array",
+      "items": { "$ref": "#/definitions/finding" }
+    },
+    "priorFindings": {
+      "description": "One entry per finding in context/prior-findings.json. Empty on a first review.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status", "evidence"],
+        "properties": {
+          "id": { "type": "string" },
+          "status": { "enum": ["fixed", "open", "moot"] },
+          "evidence": { "type": "string" }
+        }
+      }
+    },
+    "escalate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["needed", "reason", "paths"],
+      "properties": {
+        "needed": { "type": "boolean" },
+        "reason": { "type": "string" },
+        "paths": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "ci": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "notes"],
+      "properties": {
+        "state": { "enum": ["pass", "fail", "pending"] },
+        "notes": { "type": "string" }
+      }
+    },
+    "reviewMdSuggestions": {
+      "description": "Lines to propose for the repo's REVIEW.md when feedback revealed a gap in its bar. The bot never edits the file.",
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "definitions": {
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "level", "path", "line", "title", "evidence", "fix", "confidence", "needsRun"],
+      "properties": {
+        "id": {
+          "description": "B<n> for blockers, F<n> for follow-ups, N<n> for nits. The poster renumbers ids that collide with prior findings or don't match the level.",
+          "type": "string"
+        },
+        "level": { "enum": ["blocker", "follow-up", "nit"] },
+        "path": { "description": "Repository-relative path at the head SHA, as in the diff (src/x.ts, not pr/src/x.ts).", "type": "string" },
+        "line": { "description": "Line at the head SHA.", "type": "integer", "minimum": 1 },
+        "endLine": { "description": "Last line of a multi-line range.", "type": "integer", "minimum": 1 },
+        "title": { "type": "string" },
+        "evidence": { "description": "A quote from the code, or the reasoning that proves the failure.", "type": "string" },
+        "fix": { "type": "string" },
+        "confidence": { "enum": ["high", "medium"] },
+        "needsRun": { "description": "Only a local run could settle this claim.", "type": "boolean" }
+      }
+    }
+  }
+}

@@ -1,0 +1,231 @@
+AWSTemplateFormatVersion: "2010-09-09"
+# Example: Amazon Bedrock access for the reviewer (provider: bedrock). See docs/configuration.md.
+#
+# Creates:
+# - An IAM user with no console password and no access keys. Its long-term Bedrock API key, created after
+#   the stack (below), is the reviewer's REVIEWER_BEDROCK_API_KEY. The key can invoke the given model
+#   through the given inference profile and nothing else.
+# - A monthly cost budget. Its alert topic emails AlertEmails when actual spend passes AlertPercent of
+#   MonthlyBudgetUsd. At 100% a budget action attaches a deny-all-Bedrock policy to the user, so reviews
+#   fail until someone detaches it in IAM or the month ends (AWS Budgets resets IAM policy actions each
+#   period). Budget data lags actual spend by several hours, so spend can pass a threshold before it fires.
+#   The budget counts the whole account's spend: deploy this in an account used only for the reviewer, or
+#   add a cost filter.
+#
+# Deploy (in the region of the inference profile; AUTO_EXPAND is for the AWS::LanguageExtensions transform):
+#   aws cloudformation deploy --stack-name reviewer-bedrock --region us-east-1 \
+#     --template-file infra/bedrock.yml --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND \
+#     --parameter-overrides AlertEmails=alice@example.com,bob@example.com MonthlyBudgetUsd=500
+# Each address gets an SNS confirmation email; alerts reach only confirmed addresses.
+#
+# Create the key (pick an expiry; rotate before it: create a new key, update the secret, delete the old key):
+#   user=$(aws cloudformation describe-stacks --stack-name reviewer-bedrock --region us-east-1 \
+#     --query "Stacks[0].Outputs[?OutputKey=='UserName'].OutputValue" --output text)
+#   aws iam create-service-specific-credential --user-name "$user" \
+#     --service-name bedrock.amazonaws.com --credential-age-days 365 \
+#     --query ServiceSpecificCredential.ServiceCredentialSecret --output text |
+#     gh secret set REVIEWER_BEDROCK_API_KEY --org <org> --repos <repo1>,<repo2>
+# Then call the reviewer with provider: bedrock, model: <InferenceProfileId>, aws_region: <BedrockRegion>.
+Transform: AWS::LanguageExtensions
+Description: Example Bedrock access, monthly budget and spend block for the reviewer
+
+Parameters:
+  BedrockRegion:
+    Type: String
+    Default: us-east-1
+    Description: Source region of the inference profile; pass the same value as the caller's aws_region
+  InferenceProfileId:
+    Type: String
+    Default: us.anthropic.claude-opus-5-5
+    AllowedPattern: "[a-z0-9.:-]+"
+    Description: System-defined inference profile the caller passes as model
+  FoundationModelArns:
+    Type: CommaDelimitedList
+    Default: arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-opus-5-5,arn:aws:bedrock:us-east-2::foundation-model/anthropic.claude-opus-5-5,arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-opus-5-5
+    Description: The model in every region the inference profile routes requests to
+  AlertEmails:
+    Type: CommaDelimitedList
+    Description: Addresses that get the spend alert and the block notice
+  MonthlyBudgetUsd:
+    Type: Number
+    MinValue: 1
+    Description: Monthly spend limit in USD; at the limit the key is blocked
+  AlertPercent:
+    Type: Number
+    Default: 90
+    MinValue: 1
+    MaxValue: 100
+    Description: Percentage of the budget at which AlertEmails are notified
+
+Resources:
+  ReviewerUser:
+    Type: AWS::IAM::User
+    Properties:
+      Tags:
+        - Key: purpose
+          Value: reviewer Bedrock API key
+
+  InvokePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Invoke the reviewer's model through its inference profile with a long-term Bedrock API key
+      Users:
+        - !Ref ReviewerUser
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: UseLongTermApiKey
+            Effect: Allow
+            Action: bedrock:CallWithBearerToken
+            Resource: "*"
+            Condition:
+              StringEquals:
+                bedrock:bearerTokenType: LONG_TERM
+          - Sid: InvokeProfile
+            Effect: Allow
+            Action:
+              - bedrock:InvokeModel
+              - bedrock:InvokeModelWithResponseStream
+              - bedrock:GetInferenceProfile
+            Resource: !Sub arn:aws:bedrock:${BedrockRegion}:${AWS::AccountId}:inference-profile/${InferenceProfileId}
+          # The profile routes each request to the model in one of its regions; allowed only through it.
+          - Sid: InvokeModelThroughProfileOnly
+            Effect: Allow
+            Action:
+              - bedrock:InvokeModel
+              - bedrock:InvokeModelWithResponseStream
+            Resource: !Ref FoundationModelArns
+            Condition:
+              StringEquals:
+                bedrock:InferenceProfileArn: !Sub arn:aws:bedrock:${BedrockRegion}:${AWS::AccountId}:inference-profile/${InferenceProfileId}
+          # Claude Code lists profiles at startup to resolve model ids.
+          - Sid: ListProfiles
+            Effect: Allow
+            Action: bedrock:ListInferenceProfiles
+            Resource: "*"
+
+  # Not attached until the budget action attaches it at the limit.
+  BlockPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Attached by the reviewer budget action at the limit; blocks all Bedrock use until detached or the month ends
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Deny
+            Action:
+              - bedrock:*
+              - bedrock-mantle:*
+            Resource: "*"
+
+  BudgetActionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: Lets AWS Budgets attach and detach the block policy on the reviewer's Bedrock user
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: budgets.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      Policies:
+        - PolicyName: attach-block-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:AttachUserPolicy
+                  - iam:DetachUserPolicy
+                Resource: !GetAtt ReviewerUser.Arn
+                Condition:
+                  ArnEquals:
+                    iam:PolicyARN: !Ref BlockPolicy
+
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: Reviewer Bedrock budget
+
+  AlertTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref AlertTopic
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: budgets.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref AlertTopic
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+
+  Fn::ForEach::AlertSubscriptions:
+    - Email
+    - !Ref AlertEmails
+    - AlertSubscription&{Email}:
+        Type: AWS::SNS::Subscription
+        Properties:
+          TopicArn: !Ref AlertTopic
+          Protocol: email
+          Endpoint: !Ref Email
+
+  Budget:
+    Type: AWS::Budgets::Budget
+    DependsOn: AlertTopicPolicy
+    Properties:
+      Budget:
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref MonthlyBudgetUsd
+          Unit: USD
+        # Usage cost, before credits and refunds: credits must not hide spend from the block.
+        CostTypes:
+          IncludeCredit: false
+          IncludeRefund: false
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            ThresholdType: PERCENTAGE
+            Threshold: !Ref AlertPercent
+          Subscribers:
+            - SubscriptionType: SNS
+              Address: !Ref AlertTopic
+
+  BlockAtLimit:
+    Type: AWS::Budgets::BudgetsAction
+    Properties:
+      BudgetName: !Ref Budget
+      NotificationType: ACTUAL
+      ActionType: APPLY_IAM_POLICY
+      ActionThreshold:
+        Type: PERCENTAGE
+        Value: 100
+      ApprovalModel: AUTOMATIC
+      ExecutionRoleArn: !GetAtt BudgetActionRole.Arn
+      Definition:
+        IamActionDefinition:
+          PolicyArn: !Ref BlockPolicy
+          Users:
+            - !Ref ReviewerUser
+      Subscribers:
+        - Type: SNS
+          Address: !Ref AlertTopic
+
+Outputs:
+  UserName:
+    Description: IAM user to create the long-term Bedrock API key for
+    Value: !Ref ReviewerUser
+  BlockPolicyArn:
+    Description: Detach this from the user to unblock reviews before the month ends
+    Value: !Ref BlockPolicy

@@ -1,0 +1,4 @@
+# Changes here decide what the reviewer posts and whether its approvals count (bot approvals count toward
+# required reviews; docs/security-model.md).
+# Code owners are requested on every PR. The last matching pattern wins.
+* @Moti-Velz @jeffreysnell

@@ -1,0 +1,25 @@
+version = 1
+
+# Everything in this repository is Reviewer's own work unless a more specific annotation below says
+# otherwise. Copied third-party material gets its own [[annotations]] entry and an entry in
+# THIRD_PARTY_NOTICES.
+[[annotations]]
+path = "**"
+SPDX-FileCopyrightText = "2026 Nera Software Inc."
+SPDX-License-Identifier = "Apache-2.0"
+
+# Everything Claude Code (affaan-m/ECC) v2.2.2 agent prompts, vendored; agents/LICENSE-ECC is upstream's licence.
+# agents/README.md is Reviewer's own.
+[[annotations]]
+path = [
+  "agents/code-reviewer.md",
+  "agents/python-reviewer.md",
+  "agents/rust-reviewer.md",
+  "agents/security-reviewer.md",
+  "agents/silent-failure-hunter.md",
+  "agents/typescript-reviewer.md",
+  "agents/LICENSE-ECC",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Affaan Mustafa"
+SPDX-License-Identifier = "MIT"

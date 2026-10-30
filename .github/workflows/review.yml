@@ -1,0 +1,369 @@
+# Reusable workflow: gate -> review (Claude Code, read-only) -> post (neralabs-reviewer).
+# Target repos call it with templates/caller.yml. See docs/architecture.md and docs/configuration.md.
+#
+# Credentials, by job:
+#   gate     GITHUB_TOKEN (read) only: the reviewer's source is public, so the gate holds no app key
+#            while it decides whether an event (any comment mentioning the handle) is a command.
+#   review   GITHUB_TOKEN (read) for prepare. The model credential, in the review step only: with
+#            provider anthropic, secret REVIEWER_ANTHROPIC_API_KEY as ANTHROPIC_API_KEY; with provider
+#            bedrock, secret REVIEWER_BEDROCK_API_KEY (an Amazon Bedrock API key) as
+#            AWS_BEARER_TOKEN_BEDROCK. Scope the key to invoking the model the caller names, and nothing
+#            else (infra/ has an example for Bedrock).
+#            The model runs with no shell, no network tools and no GitHub token.
+#   post     GITHUB_TOKEN (read); a neralabs-reviewer token with pull-requests:write, contents:read
+#            and organization members:read (GitHub ignores an app's team review requests without it)
+#            on the calling repo.
+#   respond  as post, plus organization members:read, for help / stop / failure reports.
+#            Pushes never start a job: they neither review nor withdraw the bot's approval.
+name: reviewer
+
+on:
+  workflow_call:
+    inputs:
+      app_client_id:
+        description: neralabs-reviewer client ID (vars.REVIEWER_APP_CLIENT_ID)
+        required: true
+        type: string
+      reviewer_ref:
+        description: Ref of neralabs/reviewer to load the skill, prompts and poster from. Keep it equal to the @ref in `uses:`.
+        required: false
+        type: string
+        default: main
+      team_slug:
+        description: Team whose review request triggers a review
+        required: false
+        type: string
+        default: reviewer
+      handle:
+        description: Comment handle for commands
+        required: false
+        type: string
+        default: "@neralabs-reviewer"
+      bot_login:
+        required: false
+        type: string
+        default: neralabs-reviewer[bot]
+      allow_approve:
+        description: Let the poster approve low-risk PRs. Off in rollout phase 1.
+        required: false
+        type: boolean
+        default: false
+      provider:
+        description: Where Claude runs. `anthropic` (the Claude API; secret REVIEWER_ANTHROPIC_API_KEY) or `bedrock` (Amazon Bedrock; secret REVIEWER_BEDROCK_API_KEY and `aws_region`).
+        required: true
+        type: string
+      model:
+        description: Pinned model id rather than an alias, so reviews don't change model under you. Claude API, e.g. `claude-opus-5-5`; Bedrock, a model id or inference profile, e.g. `us.anthropic.claude-opus-5-5`.
+        required: true
+        type: string
+      aws_region:
+        description: Bedrock region (provider bedrock only), e.g. `us-east-1`
+        required: false
+        type: string
+        default: ""
+      max_budget_usd:
+        description: Spend cap for one review run
+        required: false
+        type: string
+        default: "15"
+      claude_code_version:
+        required: false
+        type: string
+        default: 2.1.299
+      large_pr_lines:
+        description: Changed lines (excluding generated files) above which a review is summary-only, unless `review full`. A repo's REVIEW.md `largePrLines` overrides it.
+        required: false
+        type: number
+        default: 50000
+    secrets:
+      REVIEWER_APP_PRIVATE_KEY:
+        description: Private key of the GitHub App the reviewer posts as
+        required: true
+      REVIEWER_ANTHROPIC_API_KEY:
+        description: Claude API key (provider anthropic)
+        required: false
+      REVIEWER_BEDROCK_API_KEY:
+        description: Amazon Bedrock API key (provider bedrock)
+        required: false
+
+permissions: {}
+
+env:
+  REVIEWER_TEAM_SLUG: ${{ inputs.team_slug }}
+  REVIEWER_HANDLE: ${{ inputs.handle }}
+  REVIEWER_BOT_LOGIN: ${{ inputs.bot_login }}
+  REVIEWER_ALLOW_APPROVE: ${{ inputs.allow_approve }}
+  REVIEWER_LARGE_PR_LINES: ${{ inputs.large_pr_lines }}
+  REVIEWER_WORK: work
+  REVIEWER_HOME: reviewer
+  NODE_VERSION: "24"
+
+jobs:
+  gate:
+    # Cheap prefilter, so most events never start a runner: pushes (they neither review nor withdraw an
+    # approval), ordinary comments, fork PRs' team requests and thread replies, and any bot's team request. PR events count only
+    # as pull_request_target, which runs the caller from the base branch: on pull_request GitHub runs the
+    # PR's own copy of the caller, which the PR could rewrite (approvals on, another reviewer ref).
+    if: >-
+      (github.event_name == 'pull_request_target'
+        && github.event.action == 'review_requested'
+        && github.event.pull_request.head.repo.full_name == github.repository
+        && github.event.requested_team.slug == inputs.team_slug
+        && github.event.sender.type != 'Bot')
+      || (((github.event_name == 'issue_comment' && github.event.issue.pull_request)
+          || (github.event_name == 'pull_request_review_comment'
+            && github.event.pull_request.head.repo.full_name == github.repository))
+        && github.event.action == 'created'
+        && github.event.comment.user.type != 'Bot'
+        && (contains(github.event.comment.body, inputs.handle)
+          || contains(github.event.comment.body, format('@{0}/{1}', github.repository_owner, inputs.team_slug))))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    outputs:
+      mode: ${{ steps.gate.outputs.mode }}
+      pr: ${{ steps.gate.outputs.pr }}
+      head_sha: ${{ steps.gate.outputs.head_sha }}
+    steps:
+      # The reviewer's own source, at the ref the caller pinned. Public, so no app token: the gate never
+      # holds the app key, whoever wrote the comment that started it.
+      - uses: actions/checkout@v7
+        with:
+          repository: neralabs/reviewer
+          ref: ${{ inputs.reviewer_ref }}
+          path: reviewer
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Gate
+        id: gate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node reviewer/poster/src/cli.ts gate
+
+      - name: Hand the source and decision to later jobs
+        if: steps.gate.outputs.mode != 'skip'
+        uses: actions/upload-artifact@v7
+        with:
+          name: reviewer-bundle
+          path: |
+            reviewer/
+            work/gate.json
+          retention-days: 3
+          if-no-files-found: error
+
+  review:
+    needs: gate
+    if: needs.gate.outputs.mode == 'review' || needs.gate.outputs.mode == 'rereview'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # A newer request for the same PR supersedes this one; `stop` cancels it.
+    concurrency:
+      group: reviewer-${{ github.repository }}-${{ needs.gate.outputs.pr }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+      statuses: read
+      actions: read
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: reviewer-bundle
+
+      - name: Check out the PR head
+        uses: actions/checkout@v7
+        with:
+          ref: refs/pull/${{ needs.gate.outputs.pr }}/head
+          path: work/pr
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Prepare the review context
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node reviewer/poster/src/cli.ts prepare
+
+      - name: Install Claude Code
+        env:
+          CLAUDE_CODE_VERSION: ${{ inputs.claude_code_version }}
+        # Scripts stay on: the package's pinned postinstall copies the native binary over a placeholder.
+        run: |
+          npm install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+          claude --version
+          node reviewer/poster/src/cli.ts agents work/agents.json
+
+      - name: Review
+        working-directory: work
+        env:
+          # Only the chosen provider's credential reaches the step; run-claude.sh checks the pairing.
+          REVIEWER_PROVIDER: ${{ inputs.provider }}
+          ANTHROPIC_API_KEY: ${{ inputs.provider == 'anthropic' && secrets.REVIEWER_ANTHROPIC_API_KEY || '' }}
+          AWS_REGION: ${{ inputs.provider == 'bedrock' && inputs.aws_region || '' }}
+          AWS_BEARER_TOKEN_BEDROCK: ${{ inputs.provider == 'bedrock' && secrets.REVIEWER_BEDROCK_API_KEY || '' }}
+          MODEL: ${{ inputs.model }}
+          MAX_BUDGET_USD: ${{ inputs.max_budget_usd }}
+        # Through bash: artifacts don't keep the executable bit.
+        run: bash ../reviewer/scripts/run-claude.sh
+
+      # The artifact isn't masked like the step log, and it holds raw tool results. A step of its own, so it
+      # also runs when the review step fails or the job times out; if redaction fails, nothing is uploaded.
+      - name: Redact the Claude Code session
+        if: always()
+        working-directory: work
+        run: |
+          node ../reviewer/poster/src/cli.ts redact transcript.jsonl transcript.md ||
+            { echo "::warning::Could not redact the session transcript, so it is not kept."; rm -f transcript.jsonl transcript.md; }
+
+      - name: Keep the Claude Code session
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reviewer-transcript
+          path: |
+            work/transcript.md
+            work/transcript.jsonl
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Hand the findings to the poster
+        uses: actions/upload-artifact@v7
+        with:
+          name: reviewer-findings
+          path: |
+            work/findings.json
+            work/context/manifest.json
+          retention-days: 3
+          if-no-files-found: error
+
+  post:
+    needs: [gate, review]
+    if: needs.review.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: reviewer-${{ github.repository }}-${{ needs.gate.outputs.pr }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+      statuses: read
+      actions: read
+    steps:
+      - name: Mint the neralabs-reviewer token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ inputs.app_client_id }}
+          private-key: ${{ secrets.REVIEWER_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-pull-requests: write
+          permission-contents: read
+          # The poster requests and removes the reviewer team; GitHub ignores an app's changes to team requests without this.
+          permission-members: read
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: reviewer-bundle
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: reviewer-findings
+          path: work
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install the poster's dependencies
+        working-directory: reviewer/poster
+        run: npm ci --ignore-scripts --omit=dev
+
+      - name: Post the review
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: node reviewer/poster/src/cli.ts post
+
+  respond:
+    needs: gate
+    if: contains(fromJSON('["help", "stop"]'), needs.gate.outputs.mode)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # `stop` joins the PR's review group, which cancels a review in progress.
+    concurrency:
+      group: ${{ needs.gate.outputs.mode == 'stop' && format('reviewer-{0}-{1}', github.repository, needs.gate.outputs.pr) || format('reviewer-respond-{0}', github.run_id) }}
+      cancel-in-progress: true
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Mint the neralabs-reviewer token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ inputs.app_client_id }}
+          private-key: ${{ secrets.REVIEWER_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-pull-requests: write
+          permission-contents: read
+          permission-members: read
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: reviewer-bundle
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Respond
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          MODE: ${{ needs.gate.outputs.mode }}
+        run: node reviewer/poster/src/cli.ts respond "$MODE"
+
+  report-failure:
+    needs: [gate, review, post, respond]
+    if: always() && (needs.review.result == 'failure' || needs.post.result == 'failure' || needs.respond.result == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Mint the neralabs-reviewer token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ inputs.app_client_id }}
+          private-key: ${{ secrets.REVIEWER_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-pull-requests: write
+          permission-contents: read
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: reviewer-bundle
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Report the failure on the PR
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: node reviewer/poster/src/cli.ts respond failure

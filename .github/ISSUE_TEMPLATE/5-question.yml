@@ -1,0 +1,19 @@
+name: Question
+description: How to set up or use the reviewer.
+labels: [question, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        We reply within 5 business days, with an answer within 10 ([response times](https://github.com/neralabs/reviewer/blob/main/CONTRIBUTING.md#response-times)). The [README](https://github.com/neralabs/reviewer/blob/main/README.md) and [configuration docs](https://github.com/neralabs/reviewer/blob/main/docs/configuration.md) may have it already.
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Your setup
+      description: Reviewer tag, provider, and what you've tried.
