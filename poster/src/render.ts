@@ -12,6 +12,8 @@ export interface Finding {
   fix: string;
   confidence: "high" | "medium";
   needsRun: boolean;
+  /** The Rerail rule the finding breaks. The schema limits it to a plain identifier. */
+  ruleId?: string;
 }
 
 export interface PriorStatus {
@@ -68,9 +70,14 @@ export function tally(levels: readonly Level[]): string {
 
 function findingBlock(f: Finding): string {
   const parts = [`**[${f.level}] ${sanitizeModelText(f.title)}**`, sanitizeModelText(f.evidence), `**Fix:** ${sanitizeModelText(f.fix)}`];
+  if (f.ruleId) parts.splice(1, 0, `Breaks Rerail rule ${codeSpan(f.ruleId)}.`);
   if (f.needsRun) parts.push("_needs-run: only a local run can settle this._");
   if (f.confidence === "medium") parts.push("_Confidence: medium._");
   return parts.join("\n\n");
+}
+
+function ruleTag(f: Finding): string {
+  return f.ruleId ? ` [rule ${codeSpan(f.ruleId)}]` : "";
 }
 
 export function inlineBody(f: Finding): string {
@@ -141,7 +148,7 @@ export function summaryBody(s: SummaryInput): string {
       heading,
       "",
       ...open.map((p) => `- ${p.id} ${sanitizeModelText(p.title)} (${location(p)}). _Still open:_ ${oneLine(p.evidence)}`),
-      ...found.map((f) => `- ${f.id} ${sanitizeModelText(f.title)} (${location(f)}). _New._`),
+      ...found.map((f) => `- ${f.id} ${sanitizeModelText(f.title)} (${location(f)})${ruleTag(f)}. _New._`),
       "",
     );
   }

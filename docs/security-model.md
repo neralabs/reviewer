@@ -40,6 +40,16 @@ The repository's `REVIEW.md`, `CLAUDE.md`, `AGENTS.md` and `CODEOWNERS`, and the
 
 Changes to `.github/`, `REVIEW.md` and `CODEOWNERS` are always high-risk, so the bot never approves them.
 
+## Rerail rules from the base branch
+
+The `rules` job scans the PR with `--rules-ref <base branch tip>`: Rerail reads `.rerail/rules/` from the base
+branch, not the PR, so a PR can't add, weaken or switch off the rules it is judged by. Packs come from the caller's
+`rerail_packs` input, which `pull_request_target` reads from the base branch. The job holds no key: only a read-only
+token for the checkout (not persisted) and, if passed, `RERAIL_PACKAGE_URL`. Rerail parses the PR's files and never
+runs them. Its result reaches the model as data in the bundle, like everything else there; rule messages are written
+by the repository's contributors. The `send` job holds only the remote's URL and token, and sends only Rerail's
+result, never model output.
+
 ## Output sanitisation and redaction
 
 The poster validates `findings.json` against the schema, then passes every model string it posts through one sanitiser: the summary, findings, earlier findings' evidence (including the "Marked moot" thread reply), the escalation and risk reasons, and suggested `REVIEW.md` lines. It:

@@ -41,9 +41,16 @@ jobs:
       # provider: bedrock
       # model: us.anthropic.claude-opus-5-5 # or an inference profile ARN
       # aws_region: us-east-1
+      # Rule-aware review (optional): check the PR against this repo's Rerail rules (.rerail/rules/ on the base
+      # branch, plus any packs) before the model reviews it. A new violation of a block or steer rule is a blocker.
+      # rerail_package: "@neralabs/rerail@<version>"
+      # rerail_packs: "" # space-separated pack ids
+      # send_results: false # true sends the scan result to RERAIL_REMOTE_URL (docs/privacy.md)
     # Name each secret instead of `secrets: inherit`, which would hand the reviewer every secret this
     # repo can see.
     secrets:
       REVIEWER_APP_PRIVATE_KEY: ${{ secrets.REVIEWER_APP_PRIVATE_KEY }}
       REVIEWER_ANTHROPIC_API_KEY: ${{ secrets.REVIEWER_ANTHROPIC_API_KEY }}
       # REVIEWER_BEDROCK_API_KEY: ${{ secrets.REVIEWER_BEDROCK_API_KEY }}
+      # RERAIL_REMOTE_URL: ${{ secrets.RERAIL_REMOTE_URL }} # with send_results
+      # RERAIL_REMOTE_TOKEN: ${{ secrets.RERAIL_REMOTE_TOKEN }}

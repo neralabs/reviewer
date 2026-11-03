@@ -1,0 +1,27 @@
+# Copy to .github/workflows/rerail-scan.yml in a repo that uses Rerail rules (.rerail/rules/ or packs).
+#
+# Scans the whole default branch on a schedule and keeps the result as the run's `rerail-scan` artifact:
+# scan.json (Rerail's result) and findings.json (the reviewer's findings schema, each finding with its ruleId).
+# Nothing leaves the repository unless send_results is on (docs/privacy.md).
+name: rerail-scan
+
+on:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    uses: neralabs/reviewer/.github/workflows/scan.yml@main
+    with:
+      reviewer_ref: main # keep equal to the @ref above
+      rerail_package: "@neralabs/rerail@<version>"
+      rerail_packs: "" # space-separated pack ids
+      send_results: false # true sends the result to RERAIL_REMOTE_URL
+    # Name each secret instead of `secrets: inherit`.
+    # secrets:
+    #   RERAIL_REMOTE_URL: ${{ secrets.RERAIL_REMOTE_URL }}
+    #   RERAIL_REMOTE_TOKEN: ${{ secrets.RERAIL_REMOTE_TOKEN }}

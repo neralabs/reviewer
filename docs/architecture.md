@@ -30,6 +30,8 @@ Concurrency is per job, not per workflow, so an ordinary comment never cancels a
 | Job | Credentials | What it does |
 |---|---|---|
 | gate | `GITHUB_TOKEN` (`pull-requests: read`) | Checks out the reviewer source at `reviewer_ref`, parses the event, checks the trigger and the sender's permission. Outputs a mode: `review`, `rereview`, `help`, `stop` or `skip`. Hands the source and its decision to later jobs as an artifact. |
+| rules | `GITHUB_TOKEN` (`contents: read`) for the checkout; `RERAIL_PACKAGE_URL` if passed | Only when the caller turns on rule-aware review ([rerail.md](rerail.md)). Installs Rerail and scans the PR head and the merge base with the base branch's rules. Never fails the review: a failed scan is recorded and handed on. |
+| send | `RERAIL_REMOTE_URL` and `RERAIL_REMOTE_TOKEN` only | Only with `send_results`. Posts the rules job's scan result to the caller's Rerail remote. |
 | review | `GITHUB_TOKEN` (read: contents, pull requests, checks, statuses, actions) for `prepare`; the chosen provider's key in the Claude Code step only | Checks out the PR head as data; `prepare` builds the context bundle; runs Claude Code with the review skill; uploads `findings.json`, the run manifest and the redacted session transcript. |
 | post | `GITHUB_TOKEN` (read); an app token for the calling repository with `pull-requests: write`, `contents: read`, `members: read` | Validates `findings.json` against the schema, re-reads PR state, CI, `REVIEW.md` and `CODEOWNERS` from GitHub, applies the verdict policy, posts the review, resolves fixed threads, removes the team request, requests code owners. |
 | respond | as post | Answers `help` and `stop`. |
@@ -46,7 +48,8 @@ The review job and the post job are separate so that the job reading untrusted c
 - CI state, with the log tail of each failed job;
 - the bot's prior findings, with the replies on their threads, and any feedback;
 - `skill/review/team-context.md`, the bar shared by every repository;
-- the repository's `REVIEW.md`, `CLAUDE.md`, `AGENTS.md` and `CODEOWNERS` **from the base branch**, so a PR can't rewrite the bar it is judged by.
+- the repository's `REVIEW.md`, `CLAUDE.md`, `AGENTS.md` and `CODEOWNERS` **from the base branch**, so a PR can't rewrite the bar it is judged by;
+- with rule-aware review on, the Rerail scan of the changes as `rerail.md` and `rerail-scan.json` ([rerail.md](rerail.md)).
 
 It deletes `.claude/`, `.mcp.json`, `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md` and `AGENTS.override.md` at any depth in both trees, since a PR controls them. It also deletes every symlink in both trees. The diff still shows each link's target as text, and the manifest lists what was removed.
 

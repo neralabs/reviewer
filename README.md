@@ -11,6 +11,7 @@ Pull request review by Claude Code, run in GitHub Actions when someone asks for 
 - Approves only low-risk PRs: no blockers, green CI, no high-risk paths, not from a fork or a bot, and approvals switched on for the repo.
 - Escalates to the code owners in `CODEOWNERS` when a change needs a human: a blocker on an owned path, high risk, or a design question.
 - Re-reviews only the new commits when asked again, resolves the threads of fixed findings, and takes feedback on its findings.
+- Optionally checks each PR against the repository's [Rerail](https://github.com/neralabs/rerail) rules first, with a deterministic scan; a new breach of a `block` or `steer` rule is a blocker that names the rule. A second workflow scans a whole branch on a schedule. See [docs/rerail.md](docs/rerail.md).
 
 The bot posts as a GitHub App you create. This repository's examples use the app `neralabs-reviewer` (handle `@neralabs-reviewer`) and the team `@neralabs/reviewer`.
 
@@ -78,7 +79,8 @@ Commands addressed to the team (`@<org>/<team_slug> review`) work like commands 
 ## Repository layout
 
 ```
-.github/workflows/review.yml   reusable workflow: gate, review, post, respond, report-failure
+.github/workflows/review.yml   reusable workflow: gate, rules, review, post, respond, report-failure (and send)
+.github/workflows/scan.yml     reusable workflow: scheduled Rerail scan of a branch (and send)
 skill/review/SKILL.md          multi-agent review skill
 skill/review/team-context.md   review bar shared by every target repository
 agents/                        vendored ECC reviewer agents (MIT)
@@ -89,8 +91,9 @@ poster/                        gate, context preparation, posting (TypeScript ru
 scripts/run-claude.sh          the locked-down claude -p invocation
 infra/bedrock.yml              CloudFormation example: a scoped Bedrock key user and a monthly budget
 templates/caller.yml           caller workflow that target repositories copy
+templates/scan-caller.yml      caller for the scheduled Rerail scan
 templates/REVIEW.md            REVIEW.md template
-docs/                          architecture, security model, configuration, privacy, versioning
+docs/                          architecture, security model, configuration, privacy, versioning, Rerail rules
 ```
 
 ## Contributing

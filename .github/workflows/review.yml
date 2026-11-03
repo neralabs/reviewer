@@ -13,6 +13,11 @@
 #   post     GITHUB_TOKEN (read); a neralabs-reviewer token with pull-requests:write, contents:read
 #            and organization members:read (GitHub ignores an app's team review requests without it)
 #            on the calling repo.
+#   rules    GITHUB_TOKEN (contents: read) for the checkout only, and RERAIL_PACKAGE_URL if the caller passes
+#            it. Off unless the caller sets rerail_package or RERAIL_PACKAGE_URL: installs Rerail and runs a
+#            deterministic `rerail scan` of the PR with the rules from the base branch. No model, no keys.
+#   send     only RERAIL_REMOTE_URL and RERAIL_REMOTE_TOKEN; runs only when the caller sets send_results.
+#            Posts the rules job's scan result to that Rerail remote. Never sees the model key or a GitHub token.
 #   respond  as post, plus organization members:read, for help / stop / failure reports.
 #            Pushes never start a job: they neither review nor withdraw the bot's approval.
 name: reviewer
@@ -75,6 +80,21 @@ on:
         required: false
         type: number
         default: 50000
+      rerail_package:
+        description: Turns on rule-aware review. What `npm install --global` installs Rerail from (an npm spec such as `@neralabs/rerail@0.2.0`, or a tarball URL). The secret RERAIL_PACKAGE_URL, when set, is used instead. Empty and no secret = off.
+        required: false
+        type: string
+        default: ""
+      rerail_packs:
+        description: Rerail rule packs to scan with besides the repository's `.rerail/rules/`, space-separated pack ids (each installed with `rerail packs add`).
+        required: false
+        type: string
+        default: ""
+      send_results:
+        description: Send the Rerail scan result to the Rerail remote in the secrets RERAIL_REMOTE_URL and RERAIL_REMOTE_TOKEN. Off by default; see docs/privacy.md.
+        required: false
+        type: boolean
+        default: false
     secrets:
       REVIEWER_APP_PRIVATE_KEY:
         description: Private key of the GitHub App the reviewer posts as
@@ -84,6 +104,15 @@ on:
         required: false
       REVIEWER_BEDROCK_API_KEY:
         description: Amazon Bedrock API key (provider bedrock)
+        required: false
+      RERAIL_PACKAGE_URL:
+        description: Where to install Rerail from, when it must not appear in a public file (for example a short-lived tarball URL). Overrides rerail_package.
+        required: false
+      RERAIL_REMOTE_URL:
+        description: Base URL of the Rerail remote that receives scan results (send_results). A secret, so no endpoint sits in the caller file.
+        required: false
+      RERAIL_REMOTE_TOKEN:
+        description: Bearer token for RERAIL_REMOTE_URL.
         required: false
 
 permissions: {}
@@ -156,8 +185,107 @@ jobs:
           retention-days: 3
           if-no-files-found: error
 
-  review:
+  # Rule-aware review: a deterministic Rerail scan of the PR, before the model, in a job with no keys. Runs for
+  # every review so the review job's needs stay simple; its steps do nothing when the caller hasn't turned it on.
+  # A failed install or scan never stops the review: the result says it failed and the model reviews without it.
+  rules:
     needs: gate
+    if: needs.gate.outputs.mode == 'review' || needs.gate.outputs.mode == 'rereview'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      on: ${{ steps.on.outputs.on }}
+    steps:
+      - name: Is rule-aware review on
+        id: on
+        env:
+          PACKAGE: ${{ inputs.rerail_package }}
+          PACKAGE_URL: ${{ secrets.RERAIL_PACKAGE_URL }}
+        run: |
+          if [ -n "$PACKAGE_URL$PACKAGE" ]; then on=true; else on=false; fi
+          echo "on=$on" >> "$GITHUB_OUTPUT"
+          echo "rule-aware review: $on"
+
+      - uses: actions/download-artifact@v8
+        if: steps.on.outputs.on == 'true'
+        with:
+          name: reviewer-bundle
+
+      # Data only: Rerail parses the files, it doesn't run them. The rules come from the base branch (--rules-ref).
+      - name: Check out the PR head
+        if: steps.on.outputs.on == 'true'
+        uses: actions/checkout@v7
+        with:
+          ref: refs/pull/${{ needs.gate.outputs.pr }}/head
+          path: work/pr
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        if: steps.on.outputs.on == 'true'
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Rerail
+        if: steps.on.outputs.on == 'true'
+        continue-on-error: true
+        env:
+          PACKAGE: ${{ inputs.rerail_package }}
+          PACKAGE_URL: ${{ secrets.RERAIL_PACKAGE_URL }}
+          PACKS: ${{ inputs.rerail_packs }}
+        # Scripts stay on: Rerail's postinstall places its native engine.
+        run: |
+          npm install --global "${PACKAGE_URL:-$PACKAGE}"
+          rerail --version
+          for pack in $PACKS; do rerail packs add "$pack"; done
+
+      - name: Scan the PR against the repository's Rerail rules
+        if: steps.on.outputs.on == 'true'
+        env:
+          REVIEWER_RERAIL_PACKS: ${{ inputs.rerail_packs }}
+        run: node reviewer/poster/src/cli.ts rules
+
+      - name: Hand the scan to the review
+        if: steps.on.outputs.on == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: reviewer-rules
+          path: work/rules/
+          retention-days: 3
+          if-no-files-found: error
+
+  # Opt-in: the scan result goes to the caller's Rerail remote. Only the remote's URL and token; no model key,
+  # no GitHub token, nothing from the model. A failure here never touches the review.
+  send:
+    needs: [gate, rules]
+    if: inputs.send_results && needs.rules.outputs.on == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: reviewer-bundle
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: reviewer-rules
+          path: work/rules
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Send the scan result to the Rerail remote
+        env:
+          RERAIL_REMOTE_URL: ${{ secrets.RERAIL_REMOTE_URL }}
+          RERAIL_REMOTE_TOKEN: ${{ secrets.RERAIL_REMOTE_TOKEN }}
+        run: node reviewer/poster/src/cli.ts send work/rules/scan.json pr
+
+  review:
+    needs: [gate, rules]
     if: needs.gate.outputs.mode == 'review' || needs.gate.outputs.mode == 'rereview'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -175,6 +303,12 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: reviewer-bundle
+
+      - uses: actions/download-artifact@v8
+        if: needs.rules.outputs.on == 'true'
+        with:
+          name: reviewer-rules
+          path: work/rules
 
       - name: Check out the PR head
         uses: actions/checkout@v7
@@ -336,8 +470,8 @@ jobs:
         run: node reviewer/poster/src/cli.ts respond "$MODE"
 
   report-failure:
-    needs: [gate, review, post, respond]
-    if: always() && (needs.review.result == 'failure' || needs.post.result == 'failure' || needs.respond.result == 'failure')
+    needs: [gate, rules, review, post, respond]
+    if: always() && (needs.rules.result == 'failure' || needs.review.result == 'failure' || needs.post.result == 'failure' || needs.respond.result == 'failure')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
