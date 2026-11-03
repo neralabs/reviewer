@@ -50,9 +50,7 @@ The `rules` job runs after the gate and before the review, with no keys and a re
 `context/rerail-scan.json`. The review bar ([team-context.md](../skill/review/team-context.md)) says:
 
 - a new violation of a `block` or `steer` rule is a **blocker**, with the rule's id in the finding's `ruleId`;
-- a new violation of a `log` rule is a follow-up at most. Each rule runs at the mode the scan reports: rules from
-  `.rerail/rules/` on the base branch run at their own mode, while a pack's rules can run as `log` when the pack
-  isn't approved in the runner's Rerail home, and then count as follow-ups;
+- a new violation of a `log` rule is a follow-up at most (see [Rule modes in CI](#rule-modes-in-ci));
 - violations already on the merge base aren't findings;
 - the model checks each violation against the code like any other finding, and drops a plain false positive.
 
@@ -61,6 +59,19 @@ The posted finding says which rule it breaks.
 A failed install or scan never stops the review. `context/rerail.md` then says the scan didn't complete, and the
 model reviews without it. Two scans add a few seconds on a typical PR; the merge-base scan covers only files with
 violations.
+
+### Rule modes in CI
+
+Each rule runs at the mode the scan reports, and only `block` and `steer` violations can be blockers. On a fresh
+runner:
+
+- rules in `.rerail/rules/` on the base branch run at their own mode (`--rules-ref`);
+- Rerail's own published packs (`rerail packs add <name>`, from npm) run at their own mode;
+- any other pack (a folder, a tarball or a third-party pack) runs as `log`, since nothing approved it in the
+  runner's throwaway Rerail database. Its violations are follow-ups at most.
+
+So for a repository's own rules to hold a PR, commit them under `.rerail/rules/`, or publish them as a pack Rerail
+runs at its own mode.
 
 ## Scheduled scan
 
