@@ -50,7 +50,9 @@ The `rules` job runs after the gate and before the review, with no keys and a re
 `context/rerail-scan.json`. The review bar ([team-context.md](../skill/review/team-context.md)) says:
 
 - a new violation of a `block` or `steer` rule is a **blocker**, with the rule's id in the finding's `ruleId`;
-- a new violation of a `log` rule is a follow-up at most;
+- a new violation of a `log` rule is a follow-up at most. Each rule runs at the mode the scan reports: rules from
+  `.rerail/rules/` on the base branch run at their own mode, while a pack's rules can run as `log` when the pack
+  isn't approved in the runner's Rerail home, and then count as follow-ups;
 - violations already on the merge base aren't findings;
 - the model checks each violation against the code like any other finding, and drops a plain false positive.
 
