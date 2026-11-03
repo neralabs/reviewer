@@ -40,20 +40,24 @@ The repository's `REVIEW.md`, `CLAUDE.md`, `AGENTS.md` and `CODEOWNERS`, and the
 
 Changes to `.github/`, `REVIEW.md` and `CODEOWNERS` are always high-risk, so the bot never approves them.
 
-## Rerail rules from the base branch
+## Modules and the rules pass
 
-The `rules` job scans the PR with `--rules-ref <base branch tip>`: Rerail reads `.rerail/rules/` from the base
-branch, not the PR, so a PR can't add, weaken or switch off the rules it is judged by. It approves rules and
-repository packs on the runner only from a checkout of the base branch's tip, through Rerail's normal approval;
-pack paths are resolved inside that checkout and a path or symlink leading out of it fails the scan
-([rerail.md](rerail.md#approval-base-branch-only)). Packs come from the caller's
-`rerail_packs` input, which `pull_request_target` reads from the base branch. The job holds no model or GitHub App key:
-only a read-only token for the checkout (not persisted), `RERAIL_PACKAGE_URL` if passed, and, for
-`rerail_package: remote:<version>`, the Rerail remote's URL and token in the install step alone, unset before
-`npm` runs ([scripts/install-rerail.sh](../scripts/install-rerail.sh)). Rerail parses the PR's files and never
-runs them. Its result reaches the model as data in the bundle, like everything else there; rule messages are written
-by the repository's contributors. The `send` job holds only the remote's URL and token, and sends only Rerail's
-result, never model output.
+- **No bias:** module output never reaches the review's first pass, not in its prompt, bundle or earlier findings.
+  The rules pass is a separate job that reads only the review's findings and the modules' new findings.
+- **The rules pass is read-only:** it has `Read` alone, over its two input files, and no shell. Module messages come
+  from rule files in the repository, so they are data to it, not instructions.
+- **The merge is deterministic:** location, check and level cap come from the module's result, never from the
+  model, and the review's own findings are never changed or dropped ([architecture.md](architecture.md#modules-and-the-rules-pass)).
+- **Configuration from the base branch only:** a module gets a checkout of the base branch's tip and takes its
+  configuration only from there. The Rerail module approves rules and repository packs from that checkout alone,
+  through Rerail's normal approval. Pack paths resolve inside that checkout, and a path or symlink leading out of it
+  fails the module ([rerail.md](rerail.md)).
+- **No keys:** modules run in a job with a read-only token (not persisted) and their own inputs; for Rerail, a
+  package URL, and the results sink's token only during its install, unset before `npm` runs. They read the pull
+  request's files and never run them.
+- **Every result is checked:** paths, ids and fingerprints must be plain, and a result that breaks the contract counts
+  as failed as a whole.
+- **The results sink** gets only the modules' records, from a job holding only its URL and token.
 
 ## Output sanitisation and redaction
 

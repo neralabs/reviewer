@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/neralabs/reviewer/schema/rules-pass.schema.json",
+  "title": "Rules pass recommendations",
+  "description": "What the rules pass (the second, smaller model step) emits: one recommendation per new module finding it was given. Location, check id and the cap on level come from the module finding, never from here: the poster takes them from the module's result by fingerprint.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "recommendations"],
+  "properties": {
+    "summary": {
+      "description": "One or two sentences on what the module findings add to the review.",
+      "type": "string"
+    },
+    "recommendations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["fingerprint", "action", "level", "title", "evidence", "fix"],
+        "properties": {
+          "fingerprint": { "description": "The module finding's fingerprint, exactly as given.", "type": "string" },
+          "action": {
+            "description": "add: the first pass missed it, post it. overlap: a first-pass finding already covers the same problem; name it in overlapsWith. dismiss: a false positive; say why in evidence.",
+            "enum": ["add", "overlap", "dismiss"]
+          },
+          "overlapsWith": { "description": "With overlap: the id of the first-pass finding (B1, F2, …).", "type": "string" },
+          "level": { "enum": ["blocker", "follow-up", "nit"] },
+          "title": { "type": "string" },
+          "evidence": { "type": "string" },
+          "fix": { "type": "string" }
+        }
+      }
+    }
+  }
+}

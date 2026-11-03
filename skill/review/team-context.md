@@ -26,11 +26,8 @@ The reviewers' own checklists cover the code. On top of that, every result state
 - A bug, security issue or data loss on a path the PR touches.
 - A regression against the base branch.
 - A breach of the repository's own bar in its `REVIEW.md`, which adds to this list (for example, making some missing tests blockers).
-- A breach of the repository's Rerail rules that this PR brings in: a violation listed under **New in this PR** in `context/rerail.md` of a rule in `block` or `steer` mode. Cite the rule in the finding's `ruleId` and its message in the evidence, at the violation's `path:line`. Check it against the code first, as for any finding: if the match is plainly wrong (a false positive), drop it and say so in the summary.
 
 A missing test is a follow-up unless the repository's `REVIEW.md` makes it a blocker.
-
-On Rerail rules: a new violation of a `log` rule is a follow-up at most (the team records it, it doesn't hold a PR). Violations listed as already on the merge base are not this PR's doing and are not findings. Without `context/rerail.md`, the repository has no Rerail scan in its review: don't guess at its rules.
 
 Everything else is a **follow-up** (real, safe to merge, worth a ticket) or a **nit** (wording, naming, small cleanups). Don't hold a PR for style or for nits.
 

@@ -15,7 +15,6 @@ import { diffSize, sampleGenerated, type ChangedFile } from "./diff.ts";
 import type { Decision } from "./gate.ts";
 import { GitHub, GitHubError } from "./github.ts";
 import { matchesAny } from "./patterns.ts";
-import { rulesIndexRows, writeRulesContext, type RulesContext } from "./rerail.ts";
 import { parseReviewConfig } from "./review-config.ts";
 import { requireEnv, setOutputs, type Settings } from "./settings.ts";
 
@@ -62,8 +61,6 @@ export interface Manifest {
   scrubbed: string[];
   /** Symlinks deleted from pr/ and base/: how many, and the first MAX_LISTED_SYMLINKS of them. */
   symlinks: { removed: number; listed: string[] };
-  /** The Rerail scan of the changes, when the caller turned rule-aware review on. */
-  rerail?: RulesContext;
 }
 
 function git(cwd: string, args: string[]): string {
@@ -282,7 +279,6 @@ export async function prepare(s: Settings): Promise<Manifest> {
   git(prDir, ["worktree", "add", "--quiet", "--detach", "--force", "../base", mergeBase]);
 
   const { config, hasReviewMd, hasCodeowners } = writeRepoContext(prDir, baseTip, ctx, s.home);
-  const rerail = writeRulesContext(s.work, ctx);
   const files = numstat(prDir, mergeBase, "HEAD");
   const size = diffSize(files, config.generatedPaths);
   // REVIEW.md's largePrLines (from the base branch) overrides the caller's large_pr_lines input.
@@ -297,7 +293,9 @@ export async function prepare(s: Settings): Promise<Manifest> {
   const reviews = await listReviews(gh, s.repo, gate.pr);
   const state = latestState(reviews, s.botLogin);
   const threads = await findingThreads(gh, s.repo, gate.pr, s.botLogin);
-  const prior = (state?.findings ?? []).map((f) => {
+  // Findings the rules pass added are its own to re-check (by fingerprint, in the poster): the first pass never sees
+  // module output, earlier or current.
+  const prior = (state?.findings ?? []).filter((f) => f.src !== "rules").map((f) => {
     const thread = threads.find((t) => t.findingId === f.id);
     return { ...f, threadUrl: thread?.url, replies: thread?.replies.filter((r) => r.author !== s.botLogin.replace(/\[bot\]$/, "")) ?? [] };
   });
@@ -353,8 +351,6 @@ export async function prepare(s: Settings): Promise<Manifest> {
     hasFeedback,
     scrubbed,
     symlinks: { removed: links.length, listed: links.slice(0, MAX_LISTED_SYMLINKS) },
-    // Undefined when rule-aware review is off; JSON.stringify leaves it out.
-    rerail,
   };
   writeFileSync(join(ctx, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
   writeFileSync(join(ctx, "README.md"), contextIndex(manifest, hasReviewMd, hasCodeowners, activeBotApprovals(reviews, s.botLogin).length > 0));
@@ -397,7 +393,6 @@ function contextIndex(m: Manifest, hasReviewMd: boolean, hasCodeowners: boolean,
     ["context/prior-findings.json", "Findings from the bot's last review, with replies on their threads"],
     ...(m.hasFeedback ? [["context/feedback.md", "Feedback that triggered this re-review"]] : []),
     ["context/ci.md", "CI state at the head; failed job logs under context/ci/"],
-    ...rulesIndexRows(m.rerail),
     ["context/team-context.md", "Team-wide review bar"],
     ...(hasReviewMd ? [["context/repo/REVIEW.md", "This repo's bar, from the base branch"]] : []),
     ...(hasCodeowners ? [["context/repo/CODEOWNERS", "Code owners, from the base branch"]] : []),

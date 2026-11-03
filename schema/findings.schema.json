@@ -82,12 +82,7 @@
         "evidence": { "description": "A quote from the code, or the reasoning that proves the failure.", "type": "string" },
         "fix": { "type": "string" },
         "confidence": { "enum": ["high", "medium"] },
-        "needsRun": { "description": "Only a local run could settle this claim.", "type": "boolean" },
-        "ruleId": {
-          "description": "The repository's Rerail rule this finding breaks, as named in context/rerail.md. Only for a breach of such a rule.",
-          "type": "string",
-          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,127}$"
-        }
+        "needsRun": { "description": "Only a local run could settle this claim.", "type": "boolean" }
       }
     }
   }

@@ -153,6 +153,11 @@ export interface StoredFinding {
   status: "open" | "moot";
   /** Why it was ruled moot, from the feedback. */
   reason?: string;
+  /** Set on findings the rules pass added: kept out of the first pass's prior findings, re-checked by fingerprint. */
+  src?: "rules";
+  module?: string;
+  check?: string;
+  fp?: string;
 }
 
 export interface ReviewState {

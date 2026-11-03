@@ -12,8 +12,10 @@ export interface Finding {
   fix: string;
   confidence: "high" | "medium";
   needsRun: boolean;
-  /** The Rerail rule the finding breaks. The schema limits it to a plain identifier. */
-  ruleId?: string;
+  /** Set on findings the rules pass added: the module finding behind it. */
+  source?: { pass: "rules"; module: string; checkId: string; fingerprint: string; overlaps?: string };
+  /** Checks the rules pass says a first-pass finding also breaks. */
+  alsoBreaks?: { module: string; checkId: string }[];
 }
 
 export interface PriorStatus {
@@ -47,6 +49,8 @@ export interface SummaryInput {
   /** The reviewer team, e.g. "@neralabs/reviewer". Requesting it asks for a review; it stays requested while an approval stands. */
   team: string;
   configError?: string;
+  /** Lines the poster adds about the rules pass and the modules, in plain text it wrote itself. */
+  notes: string[];
   state: ReviewState;
 }
 
@@ -70,14 +74,24 @@ export function tally(levels: readonly Level[]): string {
 
 function findingBlock(f: Finding): string {
   const parts = [`**[${f.level}] ${sanitizeModelText(f.title)}**`, sanitizeModelText(f.evidence), `**Fix:** ${sanitizeModelText(f.fix)}`];
-  if (f.ruleId) parts.splice(1, 0, `Breaks Rerail rule ${codeSpan(f.ruleId)}.`);
+  parts.splice(1, 0, ...origin(f));
   if (f.needsRun) parts.push("_needs-run: only a local run can settle this._");
   if (f.confidence === "medium") parts.push("_Confidence: medium._");
   return parts.join("\n\n");
 }
 
+/** Where a finding came from, when not (only) the first pass. Module and check ids are plain by contract. */
+function origin(f: Finding): string[] {
+  const check = (c: { module: string; checkId: string }) => `${codeSpan(c.checkId)} (${c.module})`;
+  const overlap = f.source?.overlaps ? `, on the same code as ${f.source.overlaps}` : "";
+  return [
+    ...(f.source ? [`_From the rules pass: breaks ${check(f.source)}${overlap}._`] : []),
+    ...(f.alsoBreaks?.length ? [`_The rules pass says this also breaks ${f.alsoBreaks.map(check).join(", ")}._`] : []),
+  ];
+}
+
 function ruleTag(f: Finding): string {
-  return f.ruleId ? ` [rule ${codeSpan(f.ruleId)}]` : "";
+  return f.source ? ` [rules pass: ${codeSpan(f.source.checkId)}]` : "";
 }
 
 export function inlineBody(f: Finding): string {
@@ -173,7 +187,7 @@ export function summaryBody(s: SummaryInput): string {
     for (const f of sortFindings(s.additional)) out.push(`<details><summary>${f.id} ${location(f, true)}</summary>`, "", findingBlock(f), "", "</details>", "");
   }
 
-  out.push(`**CI:** ${s.ci.state}${s.ci.notes ? `. ${sanitizeModelText(s.ci.notes)}` : ""}`, "");
+  out.push(`**CI:** ${s.ci.state}${s.ci.notes ? `. ${sanitizeModelText(s.ci.notes)}` : ""}`, "", ...s.notes.flatMap((n) => [n, ""]));
   if (s.configError) out.push(`**REVIEW.md:** ${s.configError}. Approval stays off until it parses.`, "");
   if (s.reviewMdSuggestions.length) {
     out.push("**Suggested REVIEW.md lines**", "", ...s.reviewMdSuggestions.map((l) => `- ${oneLine(l)}`), "");

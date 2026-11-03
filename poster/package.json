@@ -11,7 +11,7 @@
     "reviewer": "./src/cli.ts"
   },
   "scripts": {
-    "test": "node --test test/*.test.ts",
+    "test": "node --test test/*.test.ts ../modules/*/test/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

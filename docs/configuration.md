@@ -19,10 +19,12 @@ Passed under `with:` in the caller.
 | `allow_approve` | no | `false` | Let the poster approve PRs that pass the low-risk rules. Off, the bot only comments or requests changes. |
 | `max_budget_usd` | no | `"15"` | Spend cap for one review run, passed to Claude Code as `--max-budget-usd`. |
 | `large_pr_lines` | no | `50000` | Changed lines, excluding generated files, above which a review is summary-only unless someone asks for `review full`. `largePrLines` in `REVIEW.md` overrides it. |
-| `rerail_package` | no | `""` | Turns on rule-aware review: what to install Rerail from (an npm spec, a tarball URL, or `remote:<version>` to download it from the Rerail remote). See [rerail.md](rerail.md). |
-| `rerail_packs` | no | `""` | Rerail rule packs to check besides `.rerail/rules/`, space-separated pack ids. |
-| `rerail_repo_packs` | no | `""` | Rerail packs that live in the repository, space-separated paths from its root. Taken from the base branch only and approved on the runner ([rerail.md](rerail.md#approval-base-branch-only)). |
-| `send_results` | no | `false` | Send the Rerail scan result to the remote in `RERAIL_REMOTE_URL` ([rerail.md](rerail.md#sending-results-to-a-rerail-remote), [privacy.md](privacy.md)). |
+| `modules` | no | `""` | Deterministic checks to run beside the review, space-separated module ids ([modules.md](modules.md)), e.g. `rerail`. With modules, a `schedule` or `workflow_dispatch` trigger in the caller runs them over the whole branch. |
+| `rules_pass_budget_usd` | no | `"3"` | Spend cap for the rules pass, the second model step over the modules' new findings. |
+| `rerail_package` | with `modules: rerail` | `""` | What to install Rerail from: an npm spec, a tarball URL, or `remote:<version>` from the results sink ([rerail.md](rerail.md)). |
+| `rerail_packs` | no | `""` | Rerail's own rule packs, space-separated ids. |
+| `rerail_repo_packs` | no | `""` | Rule packs in the repository, space-separated paths from its root. Taken from the base branch only and approved there. |
+| `send_results` | no | `false` | Send the modules' results to the results sink ([modules.md](modules.md#the-results-sink), [privacy.md](privacy.md)). |
 | `claude_code_version` | no | pinned in `review.yml` | Version of `@anthropic-ai/claude-code` to install. Change it only together with a reviewer release that was tested with it. |
 
 The review job times out after 30 minutes.
@@ -48,8 +50,8 @@ Passed by name under `secrets:` in the caller. Don't use `secrets: inherit`: it 
 | `REVIEWER_APP_PRIVATE_KEY` | yes | Private key of the GitHub App. |
 | `REVIEWER_ANTHROPIC_API_KEY` | with `anthropic` | Claude API key. Reaches the Claude Code step as `ANTHROPIC_API_KEY`. |
 | `REVIEWER_BEDROCK_API_KEY` | with `bedrock` | Amazon Bedrock API key. Reaches the Claude Code step as `AWS_BEARER_TOKEN_BEDROCK`. |
-| `RERAIL_PACKAGE_URL` | no | Where to install Rerail from, when that URL must not appear in a public file. Overrides `rerail_package`; setting it turns rule-aware review on. Reaches the `rules` job only. |
-| `RERAIL_REMOTE_URL`, `RERAIL_REMOTE_TOKEN` | with `send_results` or `rerail_package: remote:<version>` | The Rerail remote and its token. Reach the `send` job, and the install step of the `rules` job for `remote:<version>`. |
+| `RERAIL_PACKAGE_URL` | no | Rerail module: where to install Rerail from, when that URL must not appear in a public file. Overrides `rerail_package`. |
+| `RESULTS_SINK_URL`, `RESULTS_SINK_TOKEN` | with `send_results`, or `rerail_package: remote:<version>` | The results sink and its token. They reach the `send` job, and for `remote:<version>` the Rerail module's install. |
 
 Only the chosen provider's key reaches the step. The step fails with a clear error if the provider, key and region don't match.
 

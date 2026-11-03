@@ -5,10 +5,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-const SCRIPT = new URL("../../scripts/install-rerail.sh", import.meta.url).pathname;
+const SCRIPT = new URL("../install.sh", import.meta.url).pathname;
 
 /**
- * Runs scripts/install-rerail.sh with fake curl, npm and rerail first on PATH. Each logs its arguments; curl also
+ * Runs modules/rerail/install.sh with fake curl, npm and rerail first on PATH. Each logs its arguments; curl also
  * logs the header file it was given and writes the --output file, or fails when FAKE_CURL_FAIL is set.
  */
 function run(env: Record<string, string>) {
@@ -29,7 +29,7 @@ while [ $# -gt 0 ]; do
   shift
 done`,
   );
-  fake("npm", `echo "npm-env \${RERAIL_REMOTE_TOKEN:-unset} \${RERAIL_PACKAGE_URL:-unset}" >> "${log}"`);
+  fake("npm", `echo "npm-env \${RESULTS_SINK_TOKEN:-unset} \${RERAIL_PACKAGE_URL:-unset}" >> "${log}"`);
   fake("rerail", "");
   const res = spawnSync("bash", [SCRIPT], {
     encoding: "utf8",
@@ -45,23 +45,23 @@ done`,
   return { status: res.status, out: res.stdout + res.stderr, calls };
 }
 
-const REMOTE = { RERAIL_REMOTE_URL: "https://sink.example/", RERAIL_REMOTE_TOKEN: "tok-123" };
+const REMOTE = { RESULTS_SINK_URL: "https://sink.example/", RESULTS_SINK_TOKEN: "tok-123" };
 
 test("an npm spec or URL installs as given, then each pack is added", () => {
-  const { status, calls } = run({ PACKAGE: "@neralabs/rerail@0.2.0", PACKS: "rerail example/node" });
+  const { status, calls } = run({ RERAIL_PACKAGE: "@neralabs/rerail@0.2.0", RERAIL_PACKS: "rerail example/node" });
   assert.equal(status, 0);
   assert.deepEqual(calls, ["npm install --global @neralabs/rerail@0.2.0", "npm-env unset unset", "rerail --version", "rerail packs add rerail", "rerail packs add example/node"]);
 });
 
 test("the secret RERAIL_PACKAGE_URL wins over the input, even a remote: one", () => {
-  const { status, calls } = run({ PACKAGE: "remote:0.2.0", RERAIL_PACKAGE_URL: "https://files.example/r.tgz", ...REMOTE });
+  const { status, calls } = run({ RERAIL_PACKAGE: "remote:0.2.0", RERAIL_PACKAGE_URL: "https://files.example/r.tgz", ...REMOTE });
   assert.equal(status, 0);
   assert.equal(calls[0], "npm install --global https://files.example/r.tgz");
   assert.ok(!calls.some((c) => c.startsWith("curl")));
 });
 
 test("remote:<version> downloads from the remote with the token in a header file, then installs the file", () => {
-  const { status, calls, out } = run({ PACKAGE: "remote:0.1.1-w2.0", ...REMOTE });
+  const { status, calls, out } = run({ RERAIL_PACKAGE: "remote:0.1.1-w2.0", ...REMOTE });
   assert.equal(status, 0, out);
   const curl = calls.find((c) => c.startsWith("curl "))!;
   assert.match(curl, / https:\/\/sink\.example\/v1\/packages\/rerail\/0\.1\.1-w2\.0\.tgz$/);
@@ -74,11 +74,11 @@ test("remote:<version> downloads from the remote with the token in a header file
 
 test("remote:<version> refuses an odd version, missing secrets, plain http and a failed download", () => {
   for (const [env, message] of [
-    [{ PACKAGE: "remote:../../x", ...REMOTE }, /plain version/],
-    [{ PACKAGE: "remote:", ...REMOTE }, /plain version/],
-    [{ PACKAGE: "remote:0.2.0" }, /needs the secrets/],
-    [{ PACKAGE: "remote:0.2.0", ...REMOTE, RERAIL_REMOTE_URL: "http://sink.example" }, /must be https/],
-    [{ PACKAGE: "remote:0.2.0", ...REMOTE, FAKE_CURL_FAIL: "1" }, /could not download Rerail 0\.2\.0 from the Rerail remote \(curl exit 22\)/],
+    [{ RERAIL_PACKAGE: "remote:../../x", ...REMOTE }, /plain version/],
+    [{ RERAIL_PACKAGE: "remote:", ...REMOTE }, /plain version/],
+    [{ RERAIL_PACKAGE: "remote:0.2.0" }, /needs the secrets/],
+    [{ RERAIL_PACKAGE: "remote:0.2.0", ...REMOTE, RESULTS_SINK_URL: "http://sink.example" }, /must be https/],
+    [{ RERAIL_PACKAGE: "remote:0.2.0", ...REMOTE, FAKE_CURL_FAIL: "1" }, /could not download Rerail 0\.2\.0 from the results sink \(curl exit 22\)/],
   ] as const) {
     const { status, out, calls } = run(env);
     assert.equal(status, 1, out);

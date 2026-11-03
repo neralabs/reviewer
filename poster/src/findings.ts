@@ -52,15 +52,6 @@ export function normalizePaths(findings: readonly Finding[], changed: readonly s
   });
 }
 
-/**
- * Drops a `ruleId` the run's Rerail scan didn't check: the model may only cite a rule that exists. The finding
- * itself stays; it just doesn't claim a rule.
- */
-export function checkRuleIds(findings: readonly Finding[], rerail: { ruleIds: readonly string[] } | undefined): Finding[] {
-  const known = rerail?.ruleIds ?? [];
-  return findings.map((f) => (f.ruleId === undefined || known.includes(f.ruleId) ? f : { ...f, ruleId: undefined }));
-}
-
 const PREFIX: Record<Level, string> = { blocker: "B", "follow-up": "F", nit: "N" };
 
 /** Gives each new finding an id that no prior finding and no other new finding uses. */
@@ -116,4 +107,17 @@ export function reviewComment(f: Finding, body: string): Record<string, unknown>
   return f.endLine && f.endLine > f.line
     ? { path: f.path, start_line: f.line, start_side: "RIGHT", line: f.endLine, side: "RIGHT", body }
     : { path: f.path, line: f.line, side: "RIGHT", body };
+}
+
+/**
+ * Gives every finding a unique id (findings.ts renumber), then points each rules-pass overlap at its first-pass
+ * finding's new id.
+ */
+export function renumberWithOverlaps(findings: readonly Finding[], priorIds: readonly string[]): Finding[] {
+  const renumbered = renumber(findings, priorIds);
+  const newId = new Map<string, string>();
+  findings.forEach((f, i) => {
+    if (f.id && !newId.has(f.id)) newId.set(f.id, renumbered[i]!.id);
+  });
+  return renumbered.map((f) => (f.source?.overlaps ? { ...f, source: { ...f.source, overlaps: newId.get(f.source.overlaps) ?? f.source.overlaps } } : f));
 }

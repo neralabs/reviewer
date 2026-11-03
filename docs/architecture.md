@@ -29,15 +29,46 @@ Concurrency is per job, not per workflow, so an ordinary comment never cancels a
 
 | Job | Credentials | What it does |
 |---|---|---|
-| gate | `GITHUB_TOKEN` (`pull-requests: read`) | Checks out the reviewer source at `reviewer_ref`, parses the event, checks the trigger and the sender's permission. Outputs a mode: `review`, `rereview`, `help`, `stop` or `skip`. Hands the source and its decision to later jobs as an artifact. |
-| rules | `GITHUB_TOKEN` (`contents: read`) for the checkout; `RERAIL_PACKAGE_URL` if passed; the Rerail remote's URL and token in the install step, for `rerail_package: remote:<version>` | Only when the caller turns on rule-aware review ([rerail.md](rerail.md)). Installs Rerail and scans the PR head and the merge base with the base branch's rules. Never fails the review: a failed scan is recorded and handed on. |
-| send | `RERAIL_REMOTE_URL` and `RERAIL_REMOTE_TOKEN` only | Only with `send_results`. Posts the rules job's scan result to the caller's Rerail remote. |
+| gate | `GITHUB_TOKEN` (`pull-requests: read`) | Checks out the reviewer source at `reviewer_ref`, parses the event, checks the trigger and the sender's permission. Outputs a mode: `review`, `rereview`, `help`, `stop`, `scan` (a `schedule` or `workflow_dispatch` from the caller, with modules) or `skip`. Hands the source and its decision to later jobs as an artifact. |
 | review | `GITHUB_TOKEN` (read: contents, pull requests, checks, statuses, actions) for `prepare`; the chosen provider's key in the Claude Code step only | Checks out the PR head as data; `prepare` builds the context bundle; runs Claude Code with the review skill; uploads `findings.json`, the run manifest and the redacted session transcript. |
-| post | `GITHUB_TOKEN` (read); an app token for the calling repository with `pull-requests: write`, `contents: read`, `members: read` | Validates `findings.json` against the schema, re-reads PR state, CI, `REVIEW.md` and `CODEOWNERS` from GitHub, applies the verdict policy, posts the review, resolves fixed threads, removes the team request, requests code owners. |
+| modules | `GITHUB_TOKEN` (`contents: read`) for the checkout; each module's own inputs | Only with `modules`. Runs the [modules](modules.md), in parallel with review: in diff mode on a pull request, in repository mode in a scan. Never fails the review: a module's failure is recorded in its result. |
+| rules-pass | as review, with its own budget (`rules_pass_budget_usd`) | Only when the modules found something new. A second, smaller model step that reads only the review's findings and the modules' new findings, and recommends what to add, what overlaps, and what is a false positive. |
+| send | `RESULTS_SINK_URL` and `RESULTS_SINK_TOKEN` only | Only with `send_results`. Posts the modules' results to the caller's results sink. |
+| post | `GITHUB_TOKEN` (read); an app token for the calling repository with `pull-requests: write`, `contents: read`, `members: read` | Validates `findings.json` against the schema, merges the rules pass's recommendations (below), re-reads PR state, CI, `REVIEW.md` and `CODEOWNERS` from GitHub, applies the verdict policy, posts the review, resolves fixed threads, removes the team request, requests code owners. |
 | respond | as post | Answers `help` and `stop`. |
 | report-failure | an app token with `pull-requests: write`, `contents: read` | Comments on the PR with a link to the run when review, post or respond fails. |
 
 The review job and the post job are separate so that the job reading untrusted content holds no credential that can write. The model's process holds no GitHub token at all; `prepare` fetches everything it needs first.
+
+## Modules and the rules pass
+
+Modules ([modules.md](modules.md)) are deterministic checks, such as a repository's [Rerail](rerail.md) rules. They
+must not bias the review, so the review runs in two passes:
+
+1. **The review (first pass)** is the thorough review described here. It runs in parallel with the modules and never
+   sees their output: not in its prompt, its bundle or its earlier findings.
+2. **The rules pass (second pass)** runs after both. It is a smaller model step with its own budget. It reads only the
+   review's findings and the modules' *new* findings, and returns one recommendation per module finding:
+   - `add`: the review missed it;
+   - `overlap`: a review finding already covers it;
+   - `dismiss`: a false positive.
+
+The poster merges the two. The model doesn't decide what the merge does:
+
+- **Place and check:** a rules-pass finding takes its place and check from the module's finding, by fingerprint. A
+  recommendation that names no given finding is ignored.
+- **Level:** capped by the module's level. A new `error` or `warning` can be a blocker; a `note` at most a follow-up.
+- **The review's findings** are never changed or dropped. An overlap adds "the rules pass says this also breaks …" to
+  the review's finding, unless the rules pass rates the breach more severe. Then the breach is posted as its own
+  finding that points at the review's.
+- **Labels:** findings from the rules pass say so, and name their check.
+- **Gaps:** a new module finding the rules pass left out is posted from the module's own text, so a breach is never
+  lost. If the rules pass doesn't finish, the review posts alone, with a note.
+- **Re-reviews:** an earlier rules-pass finding is fixed or still open depending on whether the module still finds its
+  fingerprint. No model is involved.
+
+A `schedule` or `workflow_dispatch` from the caller runs only the modules, in repository mode, with no model. The
+results stay in the run's `reviewer-modules` artifact, and are sent to the results sink when `send_results` is on.
 
 ## Context bundle
 
@@ -48,8 +79,7 @@ The review job and the post job are separate so that the job reading untrusted c
 - CI state, with the log tail of each failed job;
 - the bot's prior findings, with the replies on their threads, and any feedback;
 - `skill/review/team-context.md`, the bar shared by every repository;
-- the repository's `REVIEW.md`, `CLAUDE.md`, `AGENTS.md` and `CODEOWNERS` **from the base branch**, so a PR can't rewrite the bar it is judged by;
-- with rule-aware review on, the Rerail scan of the changes as `rerail.md` and `rerail-scan.json` ([rerail.md](rerail.md)).
+- the repository's `REVIEW.md`, `CLAUDE.md`, `AGENTS.md` and `CODEOWNERS` **from the base branch**, so a PR can't rewrite the bar it is judged by.
 
 It deletes `.claude/`, `.mcp.json`, `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md` and `AGENTS.override.md` at any depth in both trees, since a PR controls them. It also deletes every symlink in both trees. The diff still shows each link's target as text, and the manifest lists what was removed.
 

@@ -8,15 +8,17 @@ import { join } from "node:path";
 import { activeBotApprovals, findingThreads, latestState, listReviews, type FindingThread, type Review } from "./bot-history.ts";
 import { ciAt, describeCi, ownCheckSuite } from "./ci.ts";
 import type { ChangedFile } from "./diff.ts";
-import { checkPath, checkRuleIds, loadFindings, normalizePaths, place, renumber, reviewComment, type ModelOutput } from "./findings.ts";
+import { checkPath, loadFindings, renumberWithOverlaps, normalizePaths, place, reviewComment, type ModelOutput } from "./findings.ts";
 import type { Decision } from "./gate.ts";
 import { fileAt, GitHub, GitHubError, type RepoRef } from "./github.ts";
+import { readModuleResults } from "./modules.ts";
 import { parseCodeowners } from "./patterns.ts";
 import { decideEscalation, decideVerdict } from "./policy.ts";
 import type { Manifest } from "./prepare.ts";
 import { parseReviewConfig } from "./review-config.ts";
 import { closingReply, inlineBody, summaryBody, type Finding, type PriorStatus } from "./render.ts";
 import { dismissApproval, removeTeamRequest } from "./respond.ts";
+import { annotate, loadRulesPass, storedSource } from "./rules-pass.ts";
 import { appendSummary, requireEnv, type Settings } from "./settings.ts";
 import type { StoredFinding } from "./text.ts";
 
@@ -111,10 +113,12 @@ export async function post(s: Settings): Promise<void> {
   const threads = await findingThreads(read, s.repo, manifest.pr, s.botLogin);
   const stored = latestState(reviews, s.botLogin)?.findings ?? [];
 
-  const prior = mergePrior(stored, model.priorFindings);
+  // The rules pass's additions and earlier rules-pass findings come from the modules' results, never the first pass.
+  const rules = loadRulesPass(s.work, model.findings, readModuleResults(s.work), stored);
+  const prior = mergePrior(stored, [...model.priorFindings, ...rules.rulings]);
   const changedPaths = files.map((f) => f.filename);
-  const cited = checkRuleIds(model.findings, manifest.rerail);
-  const fresh: Finding[] = renumber(normalizePaths(cited, changedPaths), stored.map((f) => f.id));
+  const pass1 = annotate(normalizePaths(model.findings, changedPaths), rules.alsoBreaks);
+  const fresh: Finding[] = renumberWithOverlaps([...pass1, ...normalizePaths(rules.added, changedPaths)], stored.map((f) => f.id));
   const placement = place(fresh, files);
   const openPrior = prior.filter((p) => p.status === "open");
 
@@ -162,8 +166,9 @@ export async function post(s: Settings): Promise<void> {
         title: p.title,
         status: p.status === "moot" ? "moot" : "open",
         ...(p.status === "moot" ? { reason: p.evidence.slice(0, 300) } : {}),
+        ...storedSource(stored.find((x) => x.id === p.id)),
       })),
-      ...fresh.map((f): StoredFinding => ({ id: f.id, level: f.level, path: f.path, line: f.line, title: f.title.slice(0, 200), status: "open" })),
+      ...fresh.map((f): StoredFinding => ({ id: f.id, level: f.level, path: f.path, line: f.line, title: f.title.slice(0, 200), status: "open", ...storedSource(f) })),
     ],
   };
   const body = (inline: Finding[], additional: Finding[]) =>
@@ -186,6 +191,7 @@ export async function post(s: Settings): Promise<void> {
       handle: s.handle,
       team: `@${owner}/${s.teamSlug}`,
       configError: config.error,
+      notes: rules.notes,
       state,
     });
 
