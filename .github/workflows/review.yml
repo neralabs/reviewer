@@ -13,9 +13,10 @@
 #   post     GITHUB_TOKEN (read); a neralabs-reviewer token with pull-requests:write, contents:read
 #            and organization members:read (GitHub ignores an app's team review requests without it)
 #            on the calling repo.
-#   rules    GITHUB_TOKEN (contents: read) for the checkout only, and RERAIL_PACKAGE_URL if the caller passes
-#            it. Off unless the caller sets rerail_package or RERAIL_PACKAGE_URL: installs Rerail and runs a
-#            deterministic `rerail scan` of the PR with the rules from the base branch. No model, no keys.
+#   rules    GITHUB_TOKEN (contents: read) for the checkout only; RERAIL_PACKAGE_URL if the caller passes it,
+#            and RERAIL_REMOTE_URL and RERAIL_REMOTE_TOKEN in the install step only, for rerail_package remote:<v>.
+#            Off unless the caller sets rerail_package or RERAIL_PACKAGE_URL: installs Rerail and runs a
+#            deterministic `rerail scan` of the PR with the rules from the base branch. No model key.
 #   send     only RERAIL_REMOTE_URL and RERAIL_REMOTE_TOKEN; runs only when the caller sets send_results.
 #            Posts the rules job's scan result to that Rerail remote. Never sees the model key or a GitHub token.
 #   respond  as post, plus organization members:read, for help / stop / failure reports.
@@ -81,7 +82,7 @@ on:
         type: number
         default: 50000
       rerail_package:
-        description: Turns on rule-aware review. What `npm install --global` installs Rerail from (an npm spec such as `@neralabs/rerail@0.2.0`, or a tarball URL). The secret RERAIL_PACKAGE_URL, when set, is used instead. Empty and no secret = off.
+        description: Turns on rule-aware review. What `npm install --global` installs Rerail from (an npm spec such as `@neralabs/rerail@0.2.0`, or a tarball URL), or `remote:<version>` to download it from the Rerail remote in RERAIL_REMOTE_URL with RERAIL_REMOTE_TOKEN. The secret RERAIL_PACKAGE_URL, when set, is used instead. Empty and no secret = off.
         required: false
         type: string
         default: ""
@@ -228,18 +229,18 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      # The remote's URL and token reach this step only, and only for rerail_package remote:<version>.
       - name: Install Rerail
         if: steps.on.outputs.on == 'true'
         continue-on-error: true
         env:
           PACKAGE: ${{ inputs.rerail_package }}
-          PACKAGE_URL: ${{ secrets.RERAIL_PACKAGE_URL }}
+          RERAIL_PACKAGE_URL: ${{ secrets.RERAIL_PACKAGE_URL }}
           PACKS: ${{ inputs.rerail_packs }}
-        # Scripts stay on: Rerail's postinstall places its native engine.
-        run: |
-          npm install --global "${PACKAGE_URL:-$PACKAGE}"
-          rerail --version
-          for pack in $PACKS; do rerail packs add "$pack"; done
+          RERAIL_REMOTE_URL: ${{ startsWith(inputs.rerail_package, 'remote:') && secrets.RERAIL_REMOTE_URL || '' }}
+          RERAIL_REMOTE_TOKEN: ${{ startsWith(inputs.rerail_package, 'remote:') && secrets.RERAIL_REMOTE_TOKEN || '' }}
+        # Through bash: artifacts don't keep the executable bit.
+        run: bash reviewer/scripts/install-rerail.sh
 
       - name: Scan the PR against the repository's Rerail rules
         if: steps.on.outputs.on == 'true'

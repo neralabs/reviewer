@@ -44,8 +44,10 @@ Changes to `.github/`, `REVIEW.md` and `CODEOWNERS` are always high-risk, so the
 
 The `rules` job scans the PR with `--rules-ref <base branch tip>`: Rerail reads `.rerail/rules/` from the base
 branch, not the PR, so a PR can't add, weaken or switch off the rules it is judged by. Packs come from the caller's
-`rerail_packs` input, which `pull_request_target` reads from the base branch. The job holds no key: only a read-only
-token for the checkout (not persisted) and, if passed, `RERAIL_PACKAGE_URL`. Rerail parses the PR's files and never
+`rerail_packs` input, which `pull_request_target` reads from the base branch. The job holds no model or GitHub App key:
+only a read-only token for the checkout (not persisted), `RERAIL_PACKAGE_URL` if passed, and, for
+`rerail_package: remote:<version>`, the Rerail remote's URL and token in the install step alone, unset before
+`npm` runs ([scripts/install-rerail.sh](../scripts/install-rerail.sh)). Rerail parses the PR's files and never
 runs them. Its result reaches the model as data in the bundle, like everything else there; rule messages are written
 by the repository's contributors. The `send` job holds only the remote's URL and token, and sends only Rerail's
 result, never model output.

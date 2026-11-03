@@ -25,8 +25,14 @@ Turn it on in the caller ([templates/caller.yml](../templates/caller.yml)):
       rerail_packs: "" # space-separated pack ids, each installed with `rerail packs add`
 ```
 
-To install Rerail from a URL that must not appear in a public file, pass the secret `RERAIL_PACKAGE_URL` instead; it
-overrides `rerail_package`.
+Rerail is installed by [scripts/install-rerail.sh](../scripts/install-rerail.sh), from the first of:
+
+1. the secret `RERAIL_PACKAGE_URL`, for a URL that must not appear in a public file;
+2. `rerail_package: remote:<version>`: downloaded from the Rerail remote in the secrets `RERAIL_REMOTE_URL` and
+   `RERAIL_REMOTE_TOKEN`, at `<RERAIL_REMOTE_URL>/v1/packages/rerail/<version>.tgz` with the bearer token, over https
+   only. The remote may redirect to a short-lived storage URL; curl doesn't send the token on to it. The token reaches
+   the install step only, through a header file rather than curl's command line, and is unset before `npm` runs;
+3. `rerail_package` as an npm spec or tarball URL.
 
 The `rules` job runs after the gate and before the review, with no keys and a read-only token:
 
@@ -82,7 +88,7 @@ The workflow's `violations` output is the count.
 |---|---|---|
 | `reviewer_ref` | `main` | Ref of neralabs/reviewer to load the poster from; the same as the `@ref` in `uses:`. |
 | `ref` | `""` | Branch, tag or SHA to scan. Empty: the triggering ref (the default branch on `schedule`). |
-| `rerail_package` | `""` | What to install Rerail from. Required unless the secret `RERAIL_PACKAGE_URL` is set. |
+| `rerail_package` | `""` | What to install Rerail from: an npm spec, a tarball URL or `remote:<version>` (above). Required unless the secret `RERAIL_PACKAGE_URL` is set. |
 | `rerail_packs` | `""` | Rule packs to scan with, space-separated. |
 | `send_results` | `false` | Send the result to the Rerail remote. |
 

@@ -55,7 +55,9 @@ batch per scan to that URL ([poster/src/rerail.ts](../poster/src/rerail.ts)). Ex
 The result holds no source code, diff, PR text, model output or credential. Rule messages are the rule authors'
 text. Who can read the data at the remote is up to whoever runs it.
 
-`RERAIL_PACKAGE_URL`, if you use it, is only fetched from to install Rerail.
+Installing Rerail fetches it from where the caller says: `RERAIL_PACKAGE_URL`, the npm registry or a URL in
+`rerail_package`, or, for `rerail_package: remote:<version>`, the Rerail remote, which then sees the token, the
+version and the runner's address. Nothing about the repository is sent to fetch it.
 
 ## To your Actions run
 

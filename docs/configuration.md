@@ -19,7 +19,7 @@ Passed under `with:` in the caller.
 | `allow_approve` | no | `false` | Let the poster approve PRs that pass the low-risk rules. Off, the bot only comments or requests changes. |
 | `max_budget_usd` | no | `"15"` | Spend cap for one review run, passed to Claude Code as `--max-budget-usd`. |
 | `large_pr_lines` | no | `50000` | Changed lines, excluding generated files, above which a review is summary-only unless someone asks for `review full`. `largePrLines` in `REVIEW.md` overrides it. |
-| `rerail_package` | no | `""` | Turns on rule-aware review: what to install Rerail from (an npm spec or a tarball URL). See [rerail.md](rerail.md). |
+| `rerail_package` | no | `""` | Turns on rule-aware review: what to install Rerail from (an npm spec, a tarball URL, or `remote:<version>` to download it from the Rerail remote). See [rerail.md](rerail.md). |
 | `rerail_packs` | no | `""` | Rerail rule packs to check besides `.rerail/rules/`, space-separated pack ids. |
 | `send_results` | no | `false` | Send the Rerail scan result to the remote in `RERAIL_REMOTE_URL` ([rerail.md](rerail.md#sending-results-to-a-rerail-remote), [privacy.md](privacy.md)). |
 | `claude_code_version` | no | pinned in `review.yml` | Version of `@anthropic-ai/claude-code` to install. Change it only together with a reviewer release that was tested with it. |
@@ -48,7 +48,7 @@ Passed by name under `secrets:` in the caller. Don't use `secrets: inherit`: it 
 | `REVIEWER_ANTHROPIC_API_KEY` | with `anthropic` | Claude API key. Reaches the Claude Code step as `ANTHROPIC_API_KEY`. |
 | `REVIEWER_BEDROCK_API_KEY` | with `bedrock` | Amazon Bedrock API key. Reaches the Claude Code step as `AWS_BEARER_TOKEN_BEDROCK`. |
 | `RERAIL_PACKAGE_URL` | no | Where to install Rerail from, when that URL must not appear in a public file. Overrides `rerail_package`; setting it turns rule-aware review on. Reaches the `rules` job only. |
-| `RERAIL_REMOTE_URL`, `RERAIL_REMOTE_TOKEN` | with `send_results` | The Rerail remote and its token. Reach the `send` job only. |
+| `RERAIL_REMOTE_URL`, `RERAIL_REMOTE_TOKEN` | with `send_results` or `rerail_package: remote:<version>` | The Rerail remote and its token. Reach the `send` job, and the install step of the `rules` job for `remote:<version>`. |
 
 Only the chosen provider's key reaches the step. The step fails with a clear error if the provider, key and region don't match.
 

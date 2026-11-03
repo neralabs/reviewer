@@ -2,7 +2,8 @@
 # templates/scan-caller.yml. It shows how the codebase as a whole keeps to its Rerail rules; no model runs.
 #
 # Credentials, by job:
-#   scan     GITHUB_TOKEN (contents: read) for the checkouts only, and RERAIL_PACKAGE_URL if the caller passes it.
+#   scan     GITHUB_TOKEN (contents: read) for the checkouts only; RERAIL_PACKAGE_URL if the caller passes it, and
+#            RERAIL_REMOTE_URL and RERAIL_REMOTE_TOKEN in the install step only, for rerail_package remote:<v>.
 #            Installs Rerail, scans the branch with its own merged rules, uploads the result (`rerail-scan`):
 #            scan.json (Rerail's rerail.scan/1 result) and findings.json (the reviewer's findings schema, with
 #            ruleId on every finding).
@@ -23,7 +24,7 @@ on:
         type: string
         default: ""
       rerail_package:
-        description: What `npm install --global` installs Rerail from (an npm spec, or a tarball URL). The secret RERAIL_PACKAGE_URL, when set, is used instead. One of the two is required.
+        description: What `npm install --global` installs Rerail from (an npm spec, or a tarball URL), or `remote:<version>` to download it from the Rerail remote in RERAIL_REMOTE_URL with RERAIL_REMOTE_TOKEN. The secret RERAIL_PACKAGE_URL, when set, is used instead. One of the two is required.
         required: false
         type: string
         default: ""
@@ -86,17 +87,11 @@ jobs:
       - name: Install Rerail
         env:
           PACKAGE: ${{ inputs.rerail_package }}
-          PACKAGE_URL: ${{ secrets.RERAIL_PACKAGE_URL }}
+          RERAIL_PACKAGE_URL: ${{ secrets.RERAIL_PACKAGE_URL }}
           PACKS: ${{ inputs.rerail_packs }}
-        # Scripts stay on: Rerail's postinstall places its native engine.
-        run: |
-          if [ -z "$PACKAGE_URL$PACKAGE" ]; then
-            echo "::error::set rerail_package, or the secret RERAIL_PACKAGE_URL"
-            exit 1
-          fi
-          npm install --global "${PACKAGE_URL:-$PACKAGE}"
-          rerail --version
-          for pack in $PACKS; do rerail packs add "$pack"; done
+          RERAIL_REMOTE_URL: ${{ startsWith(inputs.rerail_package, 'remote:') && secrets.RERAIL_REMOTE_URL || '' }}
+          RERAIL_REMOTE_TOKEN: ${{ startsWith(inputs.rerail_package, 'remote:') && secrets.RERAIL_REMOTE_TOKEN || '' }}
+        run: bash reviewer/scripts/install-rerail.sh
 
       # The branch's own merged rules (--rules-ref HEAD), at their own modes. Exit 1 is a failed scan that may
       # still print its result; the findings step below says so.
