@@ -67,7 +67,8 @@ violations.
 A rule or pack that Rerail hasn't reviewed runs in `log` until a person approves it. In CI, the `rules` job approves
 through Rerail's normal mechanism, with no special trust inside Rerail, and only content from the **base branch**:
 
-1. it checks out the base branch's tip next to the PR (`work/rules-src`);
+1. it checks out the base branch's tip next to the PR (`work/rules-src`), with a throwaway Rerail home for the job
+   (`RERAIL_HOME` under the runner's temp directory);
 2. for each path in `rerail_repo_packs` (a pack that lives in the repository, such as `packs/team`), it resolves the
    path inside that checkout, adds the pack (`rerail packs add <base checkout>/<path>`) and approves it
    (`rerail rules approve <package name>`);

@@ -212,6 +212,8 @@ jobs:
         run: |
           if [ -n "$PACKAGE_URL$PACKAGE" ]; then on=true; else on=false; fi
           echo "on=$on" >> "$GITHUB_OUTPUT"
+          # A throwaway Rerail home for this job: packs and approvals live here and nowhere else.
+          echo "RERAIL_HOME=$RUNNER_TEMP/rerail-home" >> "$GITHUB_ENV"
           echo "rule-aware review: $on"
 
       - uses: actions/download-artifact@v8

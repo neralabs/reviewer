@@ -89,6 +89,10 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      # A throwaway Rerail home for this job: packs and approvals live here and nowhere else.
+      - name: Rerail home
+        run: echo "RERAIL_HOME=$RUNNER_TEMP/rerail-home" >> "$GITHUB_ENV"
+
       - name: Install Rerail
         env:
           PACKAGE: ${{ inputs.rerail_package }}
