@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { test } from "node:test";
@@ -15,6 +15,7 @@ import {
   sendBatch,
   uuidV5,
   lastLine,
+  packDirUnder,
   writeRulesContext,
   type RulesSummary,
   type ScanResult,
@@ -209,19 +210,24 @@ test("send doesn't retry a refused token, a too-large or malformed batch, or a w
  * A git repository with a main branch (as origin/main) and a PR commit on top, and a fake `rerail` that prints
  * the head fixture for a git-diff scan and, for the merge base, a result holding one of its violations.
  */
-function rulesWorkspace(rerailScript: string) {
+function rulesWorkspace(rerailScript: string, files: { base?: Record<string, string>; pr?: Record<string, string> } = {}) {
   const work = tmp("rules-job-");
   const pr = join(work, "pr");
   mkdirSync(pr);
   const git = (...args: string[]) =>
     execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args], { cwd: pr, encoding: "utf8" }).trim();
   git("init", "-q", "-b", "main");
-  mkdirSync(join(pr, "src"));
-  writeFileSync(join(pr, "src", "log.ts"), "console.log(1)\n");
+  const put = (tree: Record<string, string>) => {
+    for (const [path, text] of Object.entries(tree)) {
+      mkdirSync(dirname(join(pr, path)), { recursive: true });
+      writeFileSync(join(pr, path), text);
+    }
+  };
+  put({ "src/log.ts": "console.log(1)\n", ...files.base });
   git("add", "-A");
   git("commit", "-qm", "base");
   git("update-ref", "refs/remotes/origin/main", "HEAD");
-  writeFileSync(join(pr, "src", "db.ts"), "sql\n");
+  put({ "src/db.ts": "sql\n", ...files.pr });
   git("add", "-A");
   git("commit", "-qm", "pr");
   writeFileSync(join(work, "gate.json"), JSON.stringify({ mode: "review", pr: 1, baseRef: "main" }));
@@ -249,7 +255,7 @@ test("the rules job scans the PR with the base branch's rules, then the merge ba
   // Relative, as in the workflow (REVIEWER_WORK=work): git once put the merge-base worktree inside pr/.
   process.chdir(dirname(work));
   try {
-    const summary = collectRules(basename(work), ["example/node"]);
+    const summary = collectRules(basename(work), { packs: ["example/node"] });
     assert.deepEqual(summary, { status: "completed", baseScanned: true, existing: ["fp-console-old"] });
     const calls = readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l) as { cwd: string; args: string[] });
     const baseTip = mergeBase; // origin/main is the merge base here
@@ -304,4 +310,75 @@ test("the poster keeps a ruleId only when the run's scan checked that rule", () 
     checkRuleIds(findings, undefined).map((x) => x.ruleId),
     [undefined, undefined, undefined],
   );
+});
+
+test("a repository pack path resolves only inside the base checkout", () => {
+  const root = tmp("pack-path-");
+  const base = join(root, "base");
+  const outside = join(root, "pr", "packs", "team");
+  for (const dir of [join(base, "packs", "team"), outside, join(base, "packs", "empty")]) mkdirSync(dir, { recursive: true });
+  writeFileSync(join(base, "packs", "team", "pack.json"), "{}");
+  writeFileSync(join(outside, "pack.json"), "{}");
+  symlinkSync(outside, join(base, "packs", "to-pr"));
+  symlinkSync(join(base, "packs", "team"), join(base, "packs", "alias"));
+  try {
+    const real = realpathSync(join(base, "packs", "team"));
+    assert.equal(packDirUnder(base, "packs/team"), real);
+    assert.equal(packDirUnder(base, "./packs/team/"), real);
+    assert.equal(packDirUnder(base, "packs/alias"), real); // a link that stays inside is fine
+    for (const [rel, message] of [
+      ["", /relative to the repository root/],
+      [outside, /relative to the repository root/],
+      ["../pr/packs/team", /without \.\./],
+      ["packs/../../pr/packs/team", /without \.\./],
+      ["packs/to-pr", /leads out of the base branch's checkout/],
+      ["packs/missing", /not on the base branch/],
+      ["packs/empty", /no pack\.json/],
+    ] as const) {
+      assert.throws(() => packDirUnder(base, rel), message, rel);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("approval covers the base branch's packs and rules only; the PR's versions are never approved", () => {
+  const pack = (id: string) => ({ [`packs/${id}/pack.json`]: JSON.stringify({ id }), [`packs/${id}/package.json`]: JSON.stringify({ name: `@team/rerail-pack-${id}` }) });
+  const rule = (id: string) => ({ [`.rerail/rules/${id}.json`]: JSON.stringify({ format: "rerail.policy/v1", id }) });
+  const { work, bin } = rulesWorkspace(FAKE_RERAIL, {
+    base: { ...pack("team"), ...rule("base-rule") },
+    // The PR renames the pack, adds a rule and a pack of its own: none of it may be approved.
+    pr: { "packs/team/pack.json": JSON.stringify({ id: "pr-renamed" }), ...rule("pr-rule"), ...pack("pr-only") },
+  });
+  const log = join(work, "calls.jsonl");
+  process.env.REVIEWER_RERAIL_BIN = bin;
+  process.env.FAKE_LOG = log;
+  try {
+    const summary = collectRules(work, { packs: ["typescript"], repoPacks: ["packs/team"] });
+    assert.equal(summary.status, "completed", summary.error ?? "");
+    const src = realpathSync(join(work, "rules-src"));
+    const calls = readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l) as { cwd: string; args: string[] });
+    const setup = calls.filter((c) => c.args[0] !== "scan");
+    assert.deepEqual(
+      setup.map((c) => c.args),
+      [
+        ["packs", "add", join(src, "packs", "team")],
+        ["rules", "approve", "@team/rerail-pack-team", "--repo", join(work, "rules-src")],
+        ["rules", "approve", "base-rule", "--repo", join(work, "rules-src")],
+      ],
+    );
+    assert.ok(setup.every((c) => realpathSync(c.cwd) === src));
+    const scan = calls.find((c) => c.args[0] === "scan")!.args;
+    assert.deepEqual(scan.slice(scan.indexOf("--pack")), ["--pack", "typescript", "--pack", "team", "--json"]);
+
+    // A pack only the PR has is not on the base branch: the scan fails rather than run without it.
+    rmSync(join(work, "rules"), { recursive: true });
+    const prOnly = collectRules(work, { repoPacks: ["packs/pr-only"] });
+    assert.equal(prOnly.status, "failed");
+    assert.match(prOnly.error ?? "", /pack path packs\/pr-only is not on the base branch/);
+  } finally {
+    delete process.env.REVIEWER_RERAIL_BIN;
+    delete process.env.FAKE_LOG;
+    rmSync(work, { recursive: true, force: true });
+  }
 });

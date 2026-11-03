@@ -45,6 +45,7 @@ jobs:
       # branch, plus any packs) before the model reviews it. A new violation of a block or steer rule is a blocker.
       # rerail_package: "@neralabs/rerail@<version>"
       # rerail_packs: "" # space-separated pack ids
+      # rerail_repo_packs: "" # packs in this repo, paths from its root (approved from the base branch only)
       # send_results: false # true sends the scan result to RERAIL_REMOTE_URL (docs/privacy.md)
     # Name each secret instead of `secrets: inherit`, which would hand the reviewer every secret this
     # repo can see.

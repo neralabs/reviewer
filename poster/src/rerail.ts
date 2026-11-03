@@ -12,8 +12,8 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { isAbsolute, join, resolve, sep } from "node:path";
 import type { Decision } from "./gate.ts";
 import type { Level } from "./policy.ts";
 import type { Finding } from "./render.ts";
@@ -82,7 +82,7 @@ export function parseScan(text: string): ScanResult {
  * Runs `rerail scan --json` in `cwd`. Exit 0 is a completed scan whatever it found; 1 is a failed scan, which
  * still prints its result when it got that far. Anything else, or no JSON, throws.
  */
-export function runScan(cwd: string, args: readonly string[], bin = process.env.REVIEWER_RERAIL_BIN || "rerail"): ScanResult {
+export function runScan(cwd: string, args: readonly string[], bin = rerailBin()): ScanResult {
   let stdout: string;
   try {
     stdout = execFileSync(bin, ["scan", ...args, "--json"], { cwd, encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
@@ -92,6 +92,71 @@ export function runScan(cwd: string, args: readonly string[], bin = process.env.
     throw new Error(`rerail scan failed (exit ${e.status ?? "?"}): ${(e.stderr || e.message).trim().slice(0, 500)}`);
   }
   return parseScan(stdout);
+}
+
+function rerailBin(): string {
+  return process.env.REVIEWER_RERAIL_BIN || "rerail";
+}
+
+/** Runs a Rerail command that isn't a scan; throws with its output when it fails. */
+function rerail(cwd: string, args: readonly string[]): string {
+  try {
+    return execFileSync(rerailBin(), args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  } catch (err) {
+    const e = err as { status?: number; stdout?: string; stderr?: string; message: string };
+    throw new Error(`rerail ${args.slice(0, 2).join(" ")} failed (exit ${e.status ?? "?"}): ${(e.stderr || e.stdout || e.message).trim().slice(0, 500)}`);
+  }
+}
+
+/**
+ * A repository-relative pack path, resolved inside `baseDir` (the base branch's checkout). An absolute path, a
+ * `..` step, or a symlink that leads out of the checkout throws: approval is only for the base branch's content.
+ */
+export function packDirUnder(baseDir: string, rel: string): string {
+  if (!isPlainRelative(rel)) throw new Error(`pack path ${JSON.stringify(rel)} must be relative to the repository root, without ..`);
+  const root = realpathSync(baseDir);
+  const target = resolve(root, rel);
+  if (!existsSync(target)) throw new Error(`pack path ${rel} is not on the base branch`);
+  // realpath, so a symlink on the base branch can't point the approval at the PR's checkout or anywhere else.
+  const dir = realpathSync(target);
+  if (!isInside(root, dir)) throw new Error(`pack path ${rel} leads out of the base branch's checkout`);
+  if (!existsSync(join(dir, "pack.json"))) throw new Error(`pack path ${rel} has no pack.json on the base branch`);
+  return dir;
+}
+
+function isPlainRelative(rel: string): boolean {
+  return rel !== "" && !isAbsolute(rel) && !rel.split(/[\\/]/).includes("..");
+}
+
+function isInside(root: string, dir: string): boolean {
+  return dir === root || dir.startsWith(`${root}${sep}`);
+}
+
+function jsonField(path: string, field: string): string {
+  const value = (JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>)[field];
+  if (typeof value !== "string" || !value) throw new Error(`${path} has no ${field}`);
+  return value;
+}
+
+/**
+ * The one approval step, through Rerail's normal mechanism and only for content from the base branch's checkout
+ * (`baseDir`), never the PR's: adds each repository pack (`repoPacks`, paths under the base checkout) to the
+ * runner's Rerail home and approves it, and approves each rule in the base branch's `.rerail/rules/`. The scan of
+ * the PR then finds those approvals by content digest, so anything the PR changed runs unapproved. Returns the
+ * repository packs' ids, for `--pack`.
+ */
+export function approveFromBase(baseDir: string, repoPacks: readonly string[]): string[] {
+  const ids = repoPacks.map((rel) => {
+    const dir = packDirUnder(baseDir, rel);
+    const id = jsonField(join(dir, "pack.json"), "id");
+    rerail(baseDir, ["packs", "add", dir]);
+    rerail(baseDir, ["rules", "approve", jsonField(join(dir, "package.json"), "name"), "--repo", baseDir]);
+    return id;
+  });
+  const rulesDir = join(baseDir, ".rerail", "rules");
+  const ruleFiles = existsSync(rulesDir) ? readdirSync(rulesDir).filter((f) => f.endsWith(".json")).sort() : [];
+  for (const file of ruleFiles) rerail(baseDir, ["rules", "approve", jsonField(join(rulesDir, file), "id"), "--repo", baseDir]);
+  return ids;
 }
 
 /** Fingerprints of `head` violations that the base scan also found, on the paths the head scan covered. */
@@ -124,10 +189,27 @@ function scanBase(work: string, prDir: string, mergeBase: string, rulesArgs: str
   }
 }
 
-function scanPr(work: string, baseRef: string, packs: readonly string[]): RulesSummary {
+/** A worktree of the base branch's tip: the only place rules and packs are approved from. */
+function baseCheckout(work: string, prDir: string, baseTip: string): string {
+  // Absolute: git resolves a relative worktree path against prDir, not this process.
+  const dir = resolve(work, "rules-src");
+  if (!existsSync(dir)) git(prDir, ["worktree", "add", "--quiet", "--detach", "--force", dir, baseTip]);
+  return dir;
+}
+
+export interface RulesOptions {
+  /** Rule packs installed by id (`rerail packs add <id>`). */
+  packs?: readonly string[];
+  /** Packs that live in the repository, as paths from its root; taken from the base branch only. */
+  repoPacks?: readonly string[];
+}
+
+function scanPr(work: string, baseRef: string, opts: RulesOptions): RulesSummary {
   const prDir = join(work, "pr");
   const baseTip = git(prDir, ["rev-parse", `origin/${baseRef}^{commit}`]);
   const mergeBase = git(prDir, ["merge-base", baseTip, "HEAD"]);
+  const repoPackIds = approveFromBase(baseCheckout(work, prDir, baseTip), opts.repoPacks ?? []);
+  const packs = [...(opts.packs ?? []), ...repoPackIds];
   const rulesArgs = ["--rules-ref", baseTip, ...packs.flatMap((p) => ["--pack", p])];
   const head = runScan(prDir, ["--scope", "git-diff", "--base", mergeBase, ...rulesArgs]);
   writeFileSync(join(work, "rules", "scan.json"), `${JSON.stringify(head, null, 2)}\n`);
@@ -141,13 +223,13 @@ function scanPr(work: string, baseRef: string, packs: readonly string[]): RulesS
  * rules it is judged by. The head scan covers the PR's changes; the merge-base scan, with the same rules, tells
  * violations the PR brought in from ones already there. Never throws: a failure is recorded in summary.json.
  */
-export function collectRules(work: string, packs: readonly string[] = []): RulesSummary {
+export function collectRules(work: string, opts: RulesOptions = {}): RulesSummary {
   mkdirSync(join(work, "rules"), { recursive: true });
   let summary: RulesSummary;
   try {
     const gate = JSON.parse(readFileSync(join(work, "gate.json"), "utf8")) as Decision;
     if (!gate.baseRef) throw new Error("gate.json has no base ref");
-    summary = scanPr(work, gate.baseRef, packs);
+    summary = scanPr(work, gate.baseRef, opts);
   } catch (err) {
     summary = { status: "failed", error: (err as Error).message.slice(0, 500), baseScanned: false, existing: [] };
   }

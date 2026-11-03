@@ -23,6 +23,7 @@ Turn it on in the caller ([templates/caller.yml](../templates/caller.yml)):
     with:
       rerail_package: "@neralabs/rerail@<version>" # or a tarball URL
       rerail_packs: "" # space-separated pack ids, each installed with `rerail packs add`
+      rerail_repo_packs: "" # packs in this repository, paths from its root, e.g. packs/team
 ```
 
 Rerail is installed by [scripts/install-rerail.sh](../scripts/install-rerail.sh), from the first of:
@@ -61,18 +62,33 @@ A failed install or scan never stops the review. `context/rerail.md` then says t
 model reviews without it. Two scans add a few seconds on a typical PR; the merge-base scan covers only files with
 violations.
 
+### Approval: base branch only
+
+A rule or pack that Rerail hasn't reviewed runs in `log` until a person approves it. In CI, the `rules` job approves
+through Rerail's normal mechanism, with no special trust inside Rerail, and only content from the **base branch**:
+
+1. it checks out the base branch's tip next to the PR (`work/rules-src`);
+2. for each path in `rerail_repo_packs` (a pack that lives in the repository, such as `packs/team`), it resolves the
+   path inside that checkout, adds the pack (`rerail packs add <base checkout>/<path>`) and approves it
+   (`rerail rules approve <package name>`);
+3. it approves each rule in the base branch's `.rerail/rules/` (`rerail rules approve <id>`);
+4. it scans the PR head with those packs (`--pack <id>`) and `--rules-ref <base tip>`.
+
+Approvals are bound to content, so a pack or rule the PR adds or edits runs unapproved, in `log`. A pack path must
+be relative to the repository root, without `..`, and lead to a pack on the base branch: an absolute path, a `..`
+step or a symlink out of the base checkout fails the scan, and so does a pack only the PR has. The PR's checkout is
+never a source of rules, packs or approvals.
+
+The scheduled scan does the same for the branch it scans, which is merged code.
+
 ### Rule modes in CI
 
-Each rule runs at the mode the scan reports, and only `block` and `steer` violations can be blockers. On a fresh
-runner:
+Only `block` and `steer` violations can be blockers, and a rule runs at its own mode only once it is approved:
 
-- rules in `.rerail/rules/` on the base branch run at their own mode (`--rules-ref`);
-- Rerail's own published packs (`rerail packs add <name>`, from npm) run at their own mode;
-- any other pack (a folder, a tarball or a third-party pack) runs as `log`, since nothing approved it in the
-  runner's throwaway Rerail database. Its violations are follow-ups at most.
-
-So for a repository's own rules to hold a PR, commit them under `.rerail/rules/`, or publish them as a pack Rerail
-runs at its own mode.
+- rules in the base branch's `.rerail/rules/` and packs in `rerail_repo_packs`: approved by the steps above;
+- Rerail's own published packs (`rerail_packs`, from npm): need no approval;
+- any other pack (a third-party one, or a folder or tarball added some other way): runs in `log`, so its violations
+  are follow-ups at most.
 
 ## Scheduled scan
 
@@ -104,6 +120,7 @@ The workflow's `violations` output is the count.
 | `ref` | `""` | Branch, tag or SHA to scan. Empty: the triggering ref (the default branch on `schedule`). |
 | `rerail_package` | `""` | What to install Rerail from: an npm spec, a tarball URL or `remote:<version>` (above). Required unless the secret `RERAIL_PACKAGE_URL` is set. |
 | `rerail_packs` | `""` | Rule packs to scan with, space-separated. |
+| `rerail_repo_packs` | `""` | Packs in the repository, as paths from its root; approved from the scanned branch. |
 | `send_results` | `false` | Send the result to the Rerail remote. |
 
 ## Sending results to a Rerail remote

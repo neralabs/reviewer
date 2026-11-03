@@ -43,7 +43,10 @@ Changes to `.github/`, `REVIEW.md` and `CODEOWNERS` are always high-risk, so the
 ## Rerail rules from the base branch
 
 The `rules` job scans the PR with `--rules-ref <base branch tip>`: Rerail reads `.rerail/rules/` from the base
-branch, not the PR, so a PR can't add, weaken or switch off the rules it is judged by. Packs come from the caller's
+branch, not the PR, so a PR can't add, weaken or switch off the rules it is judged by. It approves rules and
+repository packs on the runner only from a checkout of the base branch's tip, through Rerail's normal approval;
+pack paths are resolved inside that checkout and a path or symlink leading out of it fails the scan
+([rerail.md](rerail.md#approval-base-branch-only)). Packs come from the caller's
 `rerail_packs` input, which `pull_request_target` reads from the base branch. The job holds no model or GitHub App key:
 only a read-only token for the checkout (not persisted), `RERAIL_PACKAGE_URL` if passed, and, for
 `rerail_package: remote:<version>`, the Rerail remote's URL and token in the install step alone, unset before

@@ -33,6 +33,11 @@ on:
         required: false
         type: string
         default: ""
+      rerail_repo_packs:
+        description: Rule packs that live in this repository, space-separated paths from its root (e.g. `packs/team`). From the scanned branch, added to the runner's Rerail home and approved there, then scanned with.
+        required: false
+        type: string
+        default: ""
       send_results:
         description: Send the scan result to the Rerail remote in the secrets RERAIL_REMOTE_URL and RERAIL_REMOTE_TOKEN. Off by default; see docs/privacy.md.
         required: false
@@ -93,16 +98,18 @@ jobs:
           RERAIL_REMOTE_TOKEN: ${{ startsWith(inputs.rerail_package, 'remote:') && secrets.RERAIL_REMOTE_TOKEN || '' }}
         run: bash reviewer/scripts/install-rerail.sh
 
-      # The branch's own merged rules (--rules-ref HEAD), at their own modes. Exit 1 is a failed scan that may
-      # still print its result; the findings step below says so.
+      # The branch's own merged rules and repository packs, approved through Rerail's normal mechanism, then the
+      # scan. Exit 1 is a failed scan that may still print its result; the findings step below says so.
       - name: Scan the branch
         id: scan
         working-directory: work/repo
         env:
           PACKS: ${{ inputs.rerail_packs }}
+          REVIEWER_RERAIL_REPO_PACKS: ${{ inputs.rerail_repo_packs }}
         run: |
+          repo_packs="$(node ../../reviewer/poster/src/cli.ts approve .)"
           args=(scan --scope repository --rules-ref HEAD --json)
-          for pack in $PACKS; do args+=(--pack "$pack"); done
+          for pack in $PACKS $repo_packs; do args+=(--pack "$pack"); done
           status=0
           rerail "${args[@]}" > ../scan.json || status=$?
           if [ "$status" -gt 1 ] || ! [ -s ../scan.json ]; then

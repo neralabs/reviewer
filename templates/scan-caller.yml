@@ -20,6 +20,7 @@ jobs:
       reviewer_ref: main # keep equal to the @ref above
       rerail_package: "@neralabs/rerail@<version>"
       rerail_packs: "" # space-separated pack ids
+      rerail_repo_packs: "" # packs in this repo, paths from its root
       send_results: false # true sends the result to RERAIL_REMOTE_URL
     # Name each secret instead of `secrets: inherit`.
     # secrets:

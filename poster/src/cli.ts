@@ -7,16 +7,17 @@
 //   respond <mode>         help | stop | failure
 //   redact <file>...       redact credentials in place (the session transcript, before upload)
 //   rules                  rules job: Rerail scan of the PR head and merge base into $REVIEWER_WORK/rules/
+//   approve <checkout>     scheduled scan: approve that checkout's repository packs and .rerail/rules/; prints pack ids
 //   scan-findings <scan.json> <out.json>   a Rerail scan result as a findings document (scheduled scan)
 //   send <scan.json> <kind>                post a Rerail scan result to RERAIL_REMOTE_URL (send job)
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { buildAgents } from "./agents.ts";
 import { decide, type GateDeps, type PullRequest } from "./gate.ts";
 import { GitHub, GitHubError } from "./github.ts";
 import { prepare } from "./prepare.ts";
-import { buildBatch, collectRules, parseScan, scanToFindings, sendBatch } from "./rerail.ts";
+import { approveFromBase, buildBatch, collectRules, parseScan, scanToFindings, sendBatch } from "./rerail.ts";
 import { respond } from "./respond.ts";
 import { appendSummary, requireEnv, setOutputs, settings, type Settings } from "./settings.ts";
 import { redactSecrets } from "./text.ts";
@@ -52,10 +53,20 @@ async function gate(s: Settings): Promise<void> {
   if (decision.mode !== "skip") appendSummary(`Gate: **${decision.mode}** for #${decision.pr}: ${decision.reason}.`);
 }
 
+function listEnv(name: string): string[] {
+  return (process.env[name] ?? "").split(/[\s,]+/).filter(Boolean);
+}
+
+/** Scheduled scan: approve the checked-out branch's repository packs and rules; prints the packs' ids, one a line. */
+function approve([dir]: string[]): void {
+  if (!dir) throw new Error("usage: approve <checkout>");
+  const ids = approveFromBase(resolve(dir), listEnv("REVIEWER_RERAIL_REPO_PACKS"));
+  if (ids.length) console.log(ids.join("\n"));
+}
+
 /** Never fails the job: a broken scan is recorded in rules/summary.json and the review goes on without it. */
 function rules(): void {
-  const packs = (process.env.REVIEWER_RERAIL_PACKS ?? "").split(/[\s,]+/).filter(Boolean);
-  const summary = collectRules(process.env.REVIEWER_WORK || "work", packs);
+  const summary = collectRules(process.env.REVIEWER_WORK || "work", { packs: listEnv("REVIEWER_RERAIL_PACKS"), repoPacks: listEnv("REVIEWER_RERAIL_REPO_PACKS") });
   const note = summary.status === "completed" ? `${summary.existing.length} already on the merge base${summary.baseScanned ? "" : " (merge base not scanned)"}` : summary.error;
   appendSummary(`Rerail scan: **${summary.status}**${note ? ` (${note})` : ""}.`);
   if (summary.error) console.log(`::warning::Rerail scan: ${summary.error}`);
@@ -96,6 +107,7 @@ function redact(args: string[]): void {
 const STANDALONE: Record<string, (args: string[]) => void | Promise<void>> = {
   redact,
   rules: () => rules(),
+  approve,
   "scan-findings": scanFindings,
   send,
 };

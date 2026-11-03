@@ -21,6 +21,7 @@ Passed under `with:` in the caller.
 | `large_pr_lines` | no | `50000` | Changed lines, excluding generated files, above which a review is summary-only unless someone asks for `review full`. `largePrLines` in `REVIEW.md` overrides it. |
 | `rerail_package` | no | `""` | Turns on rule-aware review: what to install Rerail from (an npm spec, a tarball URL, or `remote:<version>` to download it from the Rerail remote). See [rerail.md](rerail.md). |
 | `rerail_packs` | no | `""` | Rerail rule packs to check besides `.rerail/rules/`, space-separated pack ids. |
+| `rerail_repo_packs` | no | `""` | Rerail packs that live in the repository, space-separated paths from its root. Taken from the base branch only and approved on the runner ([rerail.md](rerail.md#approval-base-branch-only)). |
 | `send_results` | no | `false` | Send the Rerail scan result to the remote in `RERAIL_REMOTE_URL` ([rerail.md](rerail.md#sending-results-to-a-rerail-remote), [privacy.md](privacy.md)). |
 | `claude_code_version` | no | pinned in `review.yml` | Version of `@anthropic-ai/claude-code` to install. Change it only together with a reviewer release that was tested with it. |
 

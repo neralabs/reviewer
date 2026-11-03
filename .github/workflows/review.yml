@@ -91,6 +91,11 @@ on:
         required: false
         type: string
         default: ""
+      rerail_repo_packs:
+        description: Rule packs that live in this repository, space-separated paths from its root (e.g. `packs/team`). Taken from the base branch only, added to the runner's Rerail home and approved there, then scanned with.
+        required: false
+        type: string
+        default: ""
       send_results:
         description: Send the Rerail scan result to the Rerail remote in the secrets RERAIL_REMOTE_URL and RERAIL_REMOTE_TOKEN. Off by default; see docs/privacy.md.
         required: false
@@ -246,6 +251,7 @@ jobs:
         if: steps.on.outputs.on == 'true'
         env:
           REVIEWER_RERAIL_PACKS: ${{ inputs.rerail_packs }}
+          REVIEWER_RERAIL_REPO_PACKS: ${{ inputs.rerail_repo_packs }}
         run: node reviewer/poster/src/cli.ts rules
 
       - name: Hand the scan to the review
