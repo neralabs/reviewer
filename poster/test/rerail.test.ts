@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { test } from "node:test";
-import { loadFindings } from "../src/findings.ts";
+import { checkRuleIds, loadFindings } from "../src/findings.ts";
 import {
   buildBatch,
   collectRules,
@@ -14,6 +14,7 @@ import {
   scanToFindings,
   sendBatch,
   uuidV5,
+  lastLine,
   writeRulesContext,
   type RulesSummary,
   type ScanResult,
@@ -70,7 +71,13 @@ test("the rules context lands in the bundle only when the rules job ran", () => 
   mkdirSync(join(work, "rules"));
   writeFileSync(join(work, "rules", "summary.json"), JSON.stringify({ status: "completed", baseScanned: true, existing: ["fp-console-old"] } satisfies RulesSummary));
   writeFileSync(join(work, "rules", "scan.json"), readFileSync(FIXTURE));
-  assert.deepEqual(writeRulesContext(work, ctx), { status: "completed", violations: 3, newViolations: 2, baseScanned: true });
+  assert.deepEqual(writeRulesContext(work, ctx), {
+    status: "completed",
+    violations: 3,
+    newViolations: 2,
+    baseScanned: true,
+    ruleIds: ["no-raw-sql", "no-console-log", "prefer-const"],
+  });
   assert.ok(existsSync(join(ctx, "rerail.md")));
   assert.equal(load(join(ctx, "rerail-scan.json")).scanId, load(FIXTURE).scanId);
 
@@ -273,4 +280,28 @@ test("a broken rerail never fails the rules job; the summary says why", () => {
     delete process.env.REVIEWER_RERAIL_BIN;
     rmSync(work, { recursive: true, force: true });
   }
+});
+
+test("a violation's end is exclusive: ending at column 1 stops on the line before", () => {
+  const at = (sl: number, el: number, ec: number) => lastLine({ start: { line: sl, column: 3 }, end: { line: el, column: ec } });
+  assert.equal(at(12, 14, 20), 14);
+  assert.equal(at(12, 14, 1), 13);
+  assert.equal(at(4, 4, 1), 4); // an empty match on one line still points at it
+  assert.equal(at(4, 5, 1), 4);
+  const doc = scanToFindings({ ...load(FIXTURE), violations: [{ ...load(FIXTURE).violations[0]!, start: { line: 12, column: 1 }, end: { line: 13, column: 1 } }] });
+  assert.equal(doc.findings[0]!.endLine, undefined);
+});
+
+test("the poster keeps a ruleId only when the run's scan checked that rule", () => {
+  const f: Finding = { id: "B1", level: "blocker", path: "a.ts", line: 1, title: "t", evidence: "e", fix: "f", confidence: "high", needsRun: false };
+  const findings = [{ ...f, ruleId: "no-raw-sql" }, { ...f, id: "B2", ruleId: "made-up" }, { ...f, id: "B3" }];
+  assert.deepEqual(
+    checkRuleIds(findings, { ruleIds: ["no-raw-sql"] }).map((x) => x.ruleId),
+    ["no-raw-sql", undefined, undefined],
+  );
+  // No scan in this run: no finding may claim a rule.
+  assert.deepEqual(
+    checkRuleIds(findings, undefined).map((x) => x.ruleId),
+    [undefined, undefined, undefined],
+  );
 });

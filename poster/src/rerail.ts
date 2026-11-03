@@ -157,9 +157,17 @@ export function collectRules(work: string, packs: readonly string[] = []): Rules
 
 const MAX_LISTED_VIOLATIONS = 200;
 
+/**
+ * The last line a violation covers. `end` is exclusive: a range that ends at column 1 stops at the end of the line
+ * before.
+ */
+export function lastLine(v: Pick<ScanViolation, "start" | "end">): number {
+  return v.end.line > v.start.line && v.end.column <= 1 ? v.end.line - 1 : Math.max(v.start.line, v.end.line);
+}
+
 /** One violation as a Markdown list item. Messages come from rule documents on the base branch; still data. */
 function violationLine(v: ScanViolation): string {
-  const end = v.end.line !== v.start.line ? `-${v.end.line}` : "";
+  const end = lastLine(v) > v.start.line ? `-${lastLine(v)}` : "";
   return `- \`${v.ruleId}\` (${v.mode}) at \`${v.path}:${v.start.line}${end}\`: ${v.message.replace(/\s*\n\s*/g, " ")}`;
 }
 
@@ -229,7 +237,7 @@ export function scanToFindings(scan: ScanResult): ScanFindingsDocument {
       level,
       path: v.path,
       line: Math.max(1, v.start.line),
-      ...(v.end.line > v.start.line ? { endLine: v.end.line } : {}),
+      ...(lastLine(v) > v.start.line ? { endLine: lastLine(v) } : {}),
       title: title.length > MAX_TITLE ? `${title.slice(0, MAX_TITLE - 1)}…` : title,
       evidence: `Rerail rule ${v.ruleId} (${v.mode}, clause ${v.clauseId}, ${v.code}) matched ${v.path}:${v.start.line}:${v.start.column}-${v.end.line}:${v.end.column}. ${v.message}`,
       fix: `Bring the code in line with rule ${v.ruleId}, or change the rule if it no longer fits.`,
@@ -363,6 +371,8 @@ export interface RulesContext {
   /** Violations not already on the merge base (all of them when the base wasn't scanned). */
   newViolations: number;
   baseScanned: boolean;
+  /** Every rule the scan checked: the only ids the poster lets a finding cite. */
+  ruleIds: string[];
 }
 
 function readRules(work: string): { summary: RulesSummary; scan?: ScanResult } | undefined {
@@ -387,7 +397,7 @@ export function writeRulesContext(work: string, ctx: string): RulesContext | und
   if (!rules) return undefined;
   const { summary, scan } = rules;
   writeFileSync(join(ctx, "rerail.md"), rulesMarkdown(scan, summary));
-  if (!scan) return { status: "failed", violations: 0, newViolations: 0, baseScanned: false };
+  if (!scan) return { status: "failed", violations: 0, newViolations: 0, baseScanned: false, ruleIds: [] };
   writeFileSync(join(ctx, "rerail-scan.json"), `${JSON.stringify(scan, null, 2)}\n`);
   const existing = new Set(summary.existing);
   return {
@@ -395,6 +405,7 @@ export function writeRulesContext(work: string, ctx: string): RulesContext | und
     violations: scan.violations.length,
     newViolations: scan.violations.filter((v) => !existing.has(v.fingerprint)).length,
     baseScanned: summary.baseScanned,
+    ruleIds: [...new Set(scan.rules.map((r) => r.ruleId))],
   };
 }
 

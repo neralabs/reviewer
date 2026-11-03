@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { activeBotApprovals, findingThreads, latestState, listReviews, type FindingThread, type Review } from "./bot-history.ts";
 import { ciAt, describeCi, ownCheckSuite } from "./ci.ts";
 import type { ChangedFile } from "./diff.ts";
-import { checkPath, loadFindings, normalizePaths, place, renumber, reviewComment, type ModelOutput } from "./findings.ts";
+import { checkPath, checkRuleIds, loadFindings, normalizePaths, place, renumber, reviewComment, type ModelOutput } from "./findings.ts";
 import type { Decision } from "./gate.ts";
 import { fileAt, GitHub, GitHubError, type RepoRef } from "./github.ts";
 import { parseCodeowners } from "./patterns.ts";
@@ -113,7 +113,8 @@ export async function post(s: Settings): Promise<void> {
 
   const prior = mergePrior(stored, model.priorFindings);
   const changedPaths = files.map((f) => f.filename);
-  const fresh: Finding[] = renumber(normalizePaths(model.findings, changedPaths), stored.map((f) => f.id));
+  const cited = checkRuleIds(model.findings, manifest.rerail);
+  const fresh: Finding[] = renumber(normalizePaths(cited, changedPaths), stored.map((f) => f.id));
   const placement = place(fresh, files);
   const openPrior = prior.filter((p) => p.status === "open");
 

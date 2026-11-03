@@ -54,7 +54,8 @@ The `rules` job runs after the gate and before the review, with no keys and a re
 - violations already on the merge base aren't findings;
 - the model checks each violation against the code like any other finding, and drops a plain false positive.
 
-The posted finding says which rule it breaks.
+The posted finding says which rule it breaks. The poster keeps a finding's `ruleId` only if the run's scan checked
+that rule (the manifest lists them), so the model can't cite a rule that doesn't exist.
 
 A failed install or scan never stops the review. `context/rerail.md` then says the scan didn't complete, and the
 model reviews without it. Two scans add a few seconds on a typical PR; the merge-base scan covers only files with

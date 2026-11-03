@@ -52,6 +52,15 @@ export function normalizePaths(findings: readonly Finding[], changed: readonly s
   });
 }
 
+/**
+ * Drops a `ruleId` the run's Rerail scan didn't check: the model may only cite a rule that exists. The finding
+ * itself stays; it just doesn't claim a rule.
+ */
+export function checkRuleIds(findings: readonly Finding[], rerail: { ruleIds: readonly string[] } | undefined): Finding[] {
+  const known = rerail?.ruleIds ?? [];
+  return findings.map((f) => (f.ruleId === undefined || known.includes(f.ruleId) ? f : { ...f, ruleId: undefined }));
+}
+
 const PREFIX: Record<Level, string> = { blocker: "B", "follow-up": "F", nit: "N" };
 
 /** Gives each new finding an id that no prior finding and no other new finding uses. */
