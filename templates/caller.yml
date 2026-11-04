@@ -18,6 +18,10 @@ on:
     types: [created]
   pull_request_review_comment:
     types: [created]
+  # With modules (below): a scheduled scan of the default branch, the modules only, no model.
+  # schedule:
+  #   - cron: "17 6 * * 1"
+  # workflow_dispatch:
 
 # Read-only. Writes go through the neralabs-reviewer token the reviewer mints per job.
 permissions:
@@ -41,9 +45,18 @@ jobs:
       # provider: bedrock
       # model: us.anthropic.claude-opus-5-5 # or an inference profile ARN
       # aws_region: us-east-1
+      # Modules (optional, docs/modules.md): deterministic checks beside the review. A second, smaller rules
+      # pass turns their new findings into recommendations; the first review never sees them.
+      # modules: rerail
+      # rerail_package: "@neralabs/rerail@<version>"
+      # rerail_packs: "" # pack ids
+      # rerail_repo_packs: "" # packs in this repo, paths from its root (approved from the base branch only)
+      # send_results: false # true sends module results to RESULTS_SINK_URL (docs/privacy.md)
     # Name each secret instead of `secrets: inherit`, which would hand the reviewer every secret this
     # repo can see.
     secrets:
       REVIEWER_APP_PRIVATE_KEY: ${{ secrets.REVIEWER_APP_PRIVATE_KEY }}
       REVIEWER_ANTHROPIC_API_KEY: ${{ secrets.REVIEWER_ANTHROPIC_API_KEY }}
       # REVIEWER_BEDROCK_API_KEY: ${{ secrets.REVIEWER_BEDROCK_API_KEY }}
+      # RESULTS_SINK_URL: ${{ secrets.RESULTS_SINK_URL }} # with send_results
+      # RESULTS_SINK_TOKEN: ${{ secrets.RESULTS_SINK_TOKEN }}

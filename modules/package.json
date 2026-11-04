@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "type": "module",
+  "description": "Reviewer modules (docs/modules.md). TypeScript run directly by Node 24; no dependencies."
+}

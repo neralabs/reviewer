@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/neralabs/reviewer/schema/module-results.schema.json",
+  "title": "Module results",
+  "description": "What a module (docs/modules.md) writes to $MODULE_OUT/results.json. The reviewer checks every result against this contract; one that breaks it counts as failed.",
+  "type": "object",
+  "required": ["schema", "module", "mode", "status", "checks", "findings"],
+  "properties": {
+    "schema": { "const": "reviewer.module-results/1" },
+    "module": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,39}$" },
+    "version": { "type": "string" },
+    "mode": { "enum": ["diff", "repository"] },
+    "status": { "enum": ["completed", "failed"] },
+    "error": { "type": "string" },
+    "checks": {
+      "description": "Every check the module ran. A finding may only cite one of these.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "level"],
+        "properties": {
+          "id": { "$ref": "#/definitions/checkId" },
+          "level": { "$ref": "#/definitions/level" }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 5000,
+      "items": {
+        "type": "object",
+        "required": ["module", "checkId", "level", "path", "start", "end", "message", "fingerprint", "state"],
+        "properties": {
+          "module": { "type": "string" },
+          "checkId": { "$ref": "#/definitions/checkId" },
+          "level": { "$ref": "#/definitions/level" },
+          "path": { "description": "Repository-relative, no `..`.", "type": "string", "minLength": 1 },
+          "start": { "$ref": "#/definitions/position" },
+          "end": { "description": "Exclusive.", "$ref": "#/definitions/position" },
+          "message": { "type": "string" },
+          "fingerprint": { "description": "Stable when lines move; unique within the result.", "type": "string", "pattern": "^[A-Za-z0-9:_-]{1,128}$" },
+          "state": { "description": "new: the change brought it in. existing: the merge base had it. Always existing in repository mode.", "enum": ["new", "existing"] }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "checkId": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@-]{0,127}$" },
+    "level": { "description": "A new error or warning is a blocker; a note is a follow-up at most.", "enum": ["error", "warning", "note"] },
+    "position": {
+      "type": "object",
+      "required": ["line", "column"],
+      "properties": { "line": { "type": "integer", "minimum": 1 }, "column": { "type": "integer", "minimum": 1 } }
+    }
+  }
+}

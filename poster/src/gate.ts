@@ -5,7 +5,8 @@
 import { parseCommand, type Command } from "./commands.ts";
 import { findingIdFromBody } from "./text.ts";
 
-export type Mode = "skip" | "review" | "rereview" | "help" | "stop";
+/** `scan`: a scheduled or manual run checks the branch with the modules (repository mode), with no model. */
+export type Mode = "skip" | "review" | "rereview" | "help" | "stop" | "scan";
 
 export interface GateConfig {
   repo: { owner: string };
@@ -150,17 +151,25 @@ async function onComment(eventName: string, payload: EventPayload, cfg: GateConf
   };
 }
 
+function onSchedule(eventName: string): Decision {
+  return { mode: "scan", reason: `${eventName}: scan the branch with the modules` };
+}
+
+type Handler = (eventName: string, payload: EventPayload, cfg: GateConfig, deps: GateDeps) => Decision | Promise<Decision>;
+
+const HANDLERS: Record<string, Handler> = {
+  // Only pull_request_target: it runs the caller workflow from the base branch. On pull_request, GitHub runs
+  // the PR's own copy, so a PR could rewrite the reviewer's configuration (approvals, ref) for itself.
+  pull_request_target: (_event, payload, cfg, deps) => onPullRequest(payload, cfg, deps),
+  issue_comment: onComment,
+  pull_request_review_comment: onComment,
+  // Both run the caller from the branch they name, which is merged code; workflow_dispatch needs write access.
+  schedule: onSchedule,
+  workflow_dispatch: onSchedule,
+};
+
 export async function decide(eventName: string, payload: EventPayload, cfg: GateConfig, deps: GateDeps): Promise<Decision> {
   if (payload.sender?.type === "Bot" && eventName !== "pull_request_target") return skip("event sent by a bot");
-  switch (eventName) {
-    // Only pull_request_target: it runs the caller workflow from the base branch. On pull_request, GitHub runs
-    // the PR's own copy, so a PR could rewrite the reviewer's configuration (approvals, ref) for itself.
-    case "pull_request_target":
-      return onPullRequest(payload, cfg, deps);
-    case "issue_comment":
-    case "pull_request_review_comment":
-      return onComment(eventName, payload, cfg, deps);
-    default:
-      return skip(`event ${eventName} is not handled`);
-  }
+  const handler = Object.hasOwn(HANDLERS, eventName) ? HANDLERS[eventName] : undefined;
+  return handler ? handler(eventName, payload, cfg, deps) : skip(`event ${eventName} is not handled`);
 }

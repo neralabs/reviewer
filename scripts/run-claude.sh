@@ -18,12 +18,23 @@
 # The process holds one model credential and nothing else secret: no GitHub token. Scope that key to
 # invoking the reviewer's model only.
 #
+# The first pass (the review) uses the defaults below. The rules pass sets PROMPT_FILE, SYSTEM_FILE, SCHEMA_FILE,
+# ALLOWED_TOOLS (Read only), AGENTS_FILE= (none) and OUTPUT_FILE to run the same way with its own inputs.
+#
 # Needs: REVIEWER_PROVIDER (anthropic or bedrock), MODEL (a pinned model id; on Bedrock also an inference
 # profile), MAX_BUDGET_USD, and the provider's credential: ANTHROPIC_API_KEY for anthropic;
 # AWS_BEARER_TOKEN_BEDROCK and AWS_REGION for bedrock.
 set -euo pipefail
 
 home="$(cd "$(dirname "$0")/.." && pwd)"
+prompt_file="${PROMPT_FILE:-context/prompt.md}"
+system_file="${SYSTEM_FILE:-$home/skill/review/SKILL.md}"
+schema_file="${SCHEMA_FILE:-$home/schema/findings.schema.json}"
+allowed_tools="${ALLOWED_TOOLS:-Read,Grep,Glob,Agent}"
+agents_file="${AGENTS_FILE-agents.json}"
+output_file="${OUTPUT_FILE:-findings.json}"
+agents=()
+if [[ -n "$agents_file" ]]; then agents=(--agents "$agents_file"); fi
 summary="${GITHUB_STEP_SUMMARY:-/dev/stderr}"
 
 fail() {
@@ -72,16 +83,16 @@ render='
 export CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1
 
 set +e
-claude -p "$(cat context/prompt.md)" \
+claude -p "$(cat "$prompt_file")" \
   --restricted \
   --strict-mcp-config \
   --permission-mode dontAsk \
   --permission-prompts none \
-  --allowedTools "Read,Grep,Glob,Agent" \
+  --allowedTools "$allowed_tools" \
   --disallowedTools "Edit,Write,NotebookEdit,WebFetch,WebSearch,ScheduleWakeup" \
-  --agents agents.json \
-  --append-system-prompt "$(cat "$home/skill/review/SKILL.md")" \
-  --json-schema "$(cat "$home/schema/findings.schema.json")" \
+  "${agents[@]}" \
+  --append-system-prompt "$(cat "$system_file")" \
+  --json-schema "$(cat "$schema_file")" \
   --output-format stream-json \
   --verbose \
   --forward-subagent-text \
@@ -101,13 +112,13 @@ jq -r "$render" transcript.jsonl >transcript.md 2>/dev/null || true
 # result that carries structured output.
 jq -c 'select(.type == "result")' transcript.jsonl 2>/dev/null | tail -n 1 >claude-result.json || true
 jq -c 'select(.type == "result" and (.structured_output | type) == "object") | .structured_output' transcript.jsonl 2>/dev/null |
-  tail -n 1 >findings.json || true
+  tail -n 1 >"$output_file" || true
 
 jq -r '"### Claude Code\n\n| Result | Turns | Duration | Cost |\n|---|---|---|---|\n| \(.subtype // "?") | \(.num_turns // "?") | \((.duration_ms // 0) / 1000 | floor)s | $\(.total_cost_usd // "?") |"' \
   claude-result.json >>"$summary" 2>/dev/null || echo "Claude Code wrote no JSON result (exit $status)." >>"$summary"
 echo "Full session: the \`reviewer-transcript\` artifact of this run (\`transcript.md\` to read, \`transcript.jsonl\` raw)." >>"$summary"
 
-if ! jq -e 'objects' findings.json >/dev/null 2>&1; then
+if ! jq -e 'objects' "$output_file" >/dev/null 2>&1; then
   echo "::error::Claude Code returned no structured output (exit $status, result $(jq -r '.subtype // "unknown"' claude-result.json 2>/dev/null || echo unreadable))."
   jq -r '.result // empty' claude-result.json 2>/dev/null | head -c 4000 || true
   exit 1

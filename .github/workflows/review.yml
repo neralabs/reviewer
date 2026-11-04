@@ -1,4 +1,6 @@
-# Reusable workflow: gate -> review (Claude Code, read-only) -> post (neralabs-reviewer).
+# Reusable workflow: gate -> review (Claude Code, read-only) -> post (neralabs-reviewer), with optional
+# deterministic modules (docs/modules.md) beside the review and a second, smaller rules pass over their findings.
+# A schedule or workflow_dispatch from the caller runs only the modules over the whole branch (scan mode).
 # Target repos call it with templates/caller.yml. See docs/architecture.md and docs/configuration.md.
 #
 # Credentials, by job:
@@ -13,6 +15,13 @@
 #   post     GITHUB_TOKEN (read); a neralabs-reviewer token with pull-requests:write, contents:read
 #            and organization members:read (GitHub ignores an app's team review requests without it)
 #            on the calling repo.
+#   modules  GITHUB_TOKEN (contents: read) for the checkout. Each module's own inputs; for Rerail,
+#            RERAIL_PACKAGE_URL, and RESULTS_SINK_URL/TOKEN in its install only (rerail_package remote:<v>).
+#            No model key. Runs in parallel with review, which never sees its output.
+#   rules-pass  as review, with its own budget: GITHUB_TOKEN (read) to prepare, the model key in the model
+#            step only. Reads only the review's findings and the modules' new findings.
+#   send     only RESULTS_SINK_URL and RESULTS_SINK_TOKEN, and only with send_results: the modules' results
+#            to the caller's results sink. No model key, no GitHub token, nothing a model wrote.
 #   respond  as post, plus organization members:read, for help / stop / failure reports.
 #            Pushes never start a job: they neither review nor withdraw the bot's approval.
 name: reviewer
@@ -75,6 +84,36 @@ on:
         required: false
         type: number
         default: 50000
+      modules:
+        description: Deterministic checks to run beside the review, space-separated module ids (docs/modules.md), e.g. `rerail`. Empty = none, as before.
+        required: false
+        type: string
+        default: ""
+      rules_pass_budget_usd:
+        description: Spend cap for the rules pass, the second, smaller model step over the modules' new findings
+        required: false
+        type: string
+        default: "3"
+      rerail_package:
+        description: Rerail module. What `npm install --global` installs Rerail from (an npm spec or a tarball URL), or `remote:<version>` to download it from the results sink. The secret RERAIL_PACKAGE_URL, when set, is used instead.
+        required: false
+        type: string
+        default: ""
+      rerail_packs:
+        description: Rerail module. Rule packs to check with besides `.rerail/rules/`, space-separated pack ids.
+        required: false
+        type: string
+        default: ""
+      rerail_repo_packs:
+        description: Rerail module. Rule packs that live in this repository, space-separated paths from its root (e.g. `packs/team`), taken from the base branch only and approved there.
+        required: false
+        type: string
+        default: ""
+      send_results:
+        description: Send the modules' results to the results sink in the secrets RESULTS_SINK_URL and RESULTS_SINK_TOKEN. Off by default; see docs/privacy.md.
+        required: false
+        type: boolean
+        default: false
     secrets:
       REVIEWER_APP_PRIVATE_KEY:
         description: Private key of the GitHub App the reviewer posts as
@@ -84,6 +123,15 @@ on:
         required: false
       REVIEWER_BEDROCK_API_KEY:
         description: Amazon Bedrock API key (provider bedrock)
+        required: false
+      RERAIL_PACKAGE_URL:
+        description: Rerail module. Where to install Rerail from, when it must not appear in a public file. Overrides rerail_package.
+        required: false
+      RESULTS_SINK_URL:
+        description: Base URL of the results sink (send_results). A secret, so no endpoint sits in the caller file.
+        required: false
+      RESULTS_SINK_TOKEN:
+        description: Bearer token for RESULTS_SINK_URL.
         required: false
 
 permissions: {}
@@ -117,6 +165,7 @@ jobs:
         && github.event.comment.user.type != 'Bot'
         && (contains(github.event.comment.body, inputs.handle)
           || contains(github.event.comment.body, format('@{0}/{1}', github.repository_owner, inputs.team_slug))))
+      || ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && inputs.modules != '')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -155,6 +204,95 @@ jobs:
             work/gate.json
           retention-days: 3
           if-no-files-found: error
+
+  # Deterministic modules (docs/modules.md), in parallel with the review: the review never sees their output. A
+  # module that fails is recorded in its result and never blocks the review.
+  modules:
+    needs: gate
+    if: inputs.modules != '' && contains(fromJSON('["review", "rereview", "scan"]'), needs.gate.outputs.mode)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      new_findings: ${{ steps.modules.outputs.new_findings }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: reviewer-bundle
+
+      # Data only: modules read the files, they don't run them. Config comes from the base branch (work/base-tip).
+      - name: Check out the PR head
+        if: needs.gate.outputs.mode != 'scan'
+        uses: actions/checkout@v7
+        with:
+          ref: refs/pull/${{ needs.gate.outputs.pr }}/head
+          path: work/pr
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out the branch to scan
+        if: needs.gate.outputs.mode == 'scan'
+        uses: actions/checkout@v7
+        with:
+          path: work/pr
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Run the modules
+        id: modules
+        env:
+          REVIEWER_MODULES: ${{ inputs.modules }}
+          RERAIL_PACKAGE: ${{ inputs.rerail_package }}
+          RERAIL_PACKAGE_URL: ${{ secrets.RERAIL_PACKAGE_URL }}
+          RERAIL_PACKS: ${{ inputs.rerail_packs }}
+          RERAIL_REPO_PACKS: ${{ inputs.rerail_repo_packs }}
+          # Only to download Rerail for rerail_package remote:<version>; the module drops them after its install.
+          RESULTS_SINK_URL: ${{ startsWith(inputs.rerail_package, 'remote:') && secrets.RESULTS_SINK_URL || '' }}
+          RESULTS_SINK_TOKEN: ${{ startsWith(inputs.rerail_package, 'remote:') && secrets.RESULTS_SINK_TOKEN || '' }}
+        run: node reviewer/poster/src/cli.ts modules
+
+      - name: Hand the results on
+        uses: actions/upload-artifact@v7
+        with:
+          name: reviewer-modules
+          path: |
+            work/modules/
+            !work/modules/*/home/
+          retention-days: ${{ needs.gate.outputs.mode == 'scan' && 30 || 3 }}
+          if-no-files-found: error
+
+  # Opt-in: the modules' results go to the caller's results sink. Only the sink's URL and token; no model key,
+  # no GitHub token, nothing a model wrote. A failure here never touches the review.
+  send:
+    needs: [gate, modules]
+    if: inputs.send_results && needs.modules.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: reviewer-bundle
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: reviewer-modules
+          path: work/modules
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Send the results to the results sink
+        env:
+          RESULTS_SINK_URL: ${{ secrets.RESULTS_SINK_URL }}
+          RESULTS_SINK_TOKEN: ${{ secrets.RESULTS_SINK_TOKEN }}
+          KIND: ${{ needs.gate.outputs.mode == 'scan' && 'scan' || 'pr' }}
+        run: node reviewer/poster/src/cli.ts send "$KIND"
 
   review:
     needs: gate
@@ -245,9 +383,91 @@ jobs:
           retention-days: 3
           if-no-files-found: error
 
+  # The second, smaller model step: the review's findings plus the modules' new findings, nothing else. It recommends
+  # what to add, what overlaps the review, and what is a false positive; the poster decides the rest. Runs only
+  # when the modules found something new.
+  rules-pass:
+    needs: [gate, review, modules]
+    if: needs.review.result == 'success' && needs.modules.result == 'success' && fromJSON(needs.modules.outputs.new_findings || '0') > 0
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: reviewer-${{ github.repository }}-${{ needs.gate.outputs.pr }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: reviewer-bundle
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: reviewer-findings
+          path: work
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: reviewer-modules
+          path: work/modules
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # Inputs go to work/rules-pass/input/, the only place the model step can read.
+      - name: Prepare the rules pass
+        id: prepare
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node reviewer/poster/src/cli.ts rules-pass-prepare
+
+      - name: Install Claude Code
+        if: steps.prepare.outputs.given != '0'
+        env:
+          CLAUDE_CODE_VERSION: ${{ inputs.claude_code_version }}
+        run: npm install --global "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+
+      - name: Rules pass
+        if: steps.prepare.outputs.given != '0'
+        working-directory: work/rules-pass
+        env:
+          REVIEWER_PROVIDER: ${{ inputs.provider }}
+          ANTHROPIC_API_KEY: ${{ inputs.provider == 'anthropic' && secrets.REVIEWER_ANTHROPIC_API_KEY || '' }}
+          AWS_REGION: ${{ inputs.provider == 'bedrock' && inputs.aws_region || '' }}
+          AWS_BEARER_TOKEN_BEDROCK: ${{ inputs.provider == 'bedrock' && secrets.REVIEWER_BEDROCK_API_KEY || '' }}
+          MODEL: ${{ inputs.model }}
+          MAX_BUDGET_USD: ${{ inputs.rules_pass_budget_usd }}
+          PROMPT_FILE: input/prompt.md
+          SYSTEM_FILE: ../../reviewer/prompts/rules-pass.md
+          SCHEMA_FILE: ../../reviewer/schema/rules-pass.schema.json
+          ALLOWED_TOOLS: Read
+          AGENTS_FILE: ""
+          OUTPUT_FILE: rules-pass.json
+        run: bash ../../reviewer/scripts/run-claude.sh
+
+      - name: Redact the rules pass session
+        if: always()
+        working-directory: work/rules-pass
+        run: |
+          node ../../reviewer/poster/src/cli.ts redact transcript.jsonl transcript.md ||
+            { echo "::warning::Could not redact the rules pass transcript, so it is not kept."; rm -f transcript.jsonl transcript.md; }
+
+      - name: Keep the rules pass
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: reviewer-rules-pass
+          path: |
+            work/rules-pass/
+          retention-days: 3
+          if-no-files-found: ignore
+
   post:
-    needs: [gate, review]
-    if: needs.review.result == 'success'
+    needs: [gate, review, modules, rules-pass]
+    # The modules and the rules pass are optional: the review posts whether they ran, failed or were skipped.
+    if: "!cancelled() && needs.review.result == 'success'"
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:
@@ -282,6 +502,18 @@ jobs:
           name: reviewer-findings
           path: work
 
+      - uses: actions/download-artifact@v8
+        if: needs.modules.result == 'success'
+        with:
+          name: reviewer-modules
+          path: work/modules
+
+      - uses: actions/download-artifact@v8
+        if: needs.rules-pass.result == 'success'
+        with:
+          name: reviewer-rules-pass
+          path: work/rules-pass
+
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -294,6 +526,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          REVIEWER_MODULES_JOB: ${{ needs.modules.result }}
         run: node reviewer/poster/src/cli.ts post
 
   respond:

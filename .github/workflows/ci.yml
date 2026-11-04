@@ -38,7 +38,7 @@ jobs:
         with:
           args: -color
       - name: shellcheck
-        run: shellcheck scripts/*.sh
+        run: shellcheck scripts/*.sh modules/*/*.sh poster/test/fixtures/modules/*/run.sh
 
   licenses:
     name: Licences (REUSE and copyleft gate)

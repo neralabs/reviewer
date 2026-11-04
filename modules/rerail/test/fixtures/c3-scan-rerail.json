@@ -1,0 +1,581 @@
+{
+  "schema": "rerail.scan/1",
+  "scanId": "540713d6-37be-4e4d-880d-a36c8d3ad2fc",
+  "tool": {
+    "name": "rerail",
+    "version": "0.1.0"
+  },
+  "startedAt": 1793732246120,
+  "finishedAt": 1793732249067,
+  "repository": {
+    "key": "remote:github.com/neralabs/rerail",
+    "displayName": "rerail"
+  },
+  "checkout": {
+    "path": "/home/runner/work/rerail/rerail",
+    "head": "a2b52aa55e6545d93ee8587a3b6df6f5fab558e5",
+    "ref": "refs/heads/jeffreysnell/w2-headless-scan-remote-sink"
+  },
+  "scope": "repository",
+  "base": null,
+  "paths": null,
+  "rulesSource": {
+    "kind": "home"
+  },
+  "status": "completed",
+  "rules": [
+    {
+      "ruleId": "rerail-command-sigil",
+      "payloadHash": "sha256:f6bcc376b148271e4366fcaeea72c081e3256e1e9c634b5cf17c4c3ea4dbc551",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-conformance-boundary",
+      "payloadHash": "sha256:f5116b7690c0f26ef3efbe775b370f6048475557a2fd2da7c8abf6aabdd68136",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-conformance-pinned-data",
+      "payloadHash": "sha256:bd38817abf3860de2cb6cc898f83bc4524b27ea900d20cef6f5df04c0616346a",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-fixed-value-lists",
+      "payloadHash": "sha256:a4dc855a99e1784d19096469557d0586104535a188bc8471d663146101da553b",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-fixtures-root",
+      "payloadHash": "sha256:1b823237b2310d33cd64ea6f2346a356ccdf3ff53efc757cc521228b6885b080",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-generator-placement",
+      "payloadHash": "sha256:a56a9fed18d3188dda71c4d8017ea92f85faadd8d999d1628ac80d2e1975cc8b",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-git-no-lazy-fetch",
+      "payloadHash": "sha256:1321ce2909fb579821597ee974354f1e835ff1b2c1051f4f17af9ae1f9f04193",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-grammar-node-kinds",
+      "payloadHash": "sha256:a1cdc7528e4986f5082137c9a27d82c329f2cc4f7cb73900cf5a9adbe49150ae",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-home-file-names",
+      "payloadHash": "sha256:53601bdcfde7a0b906d539ccc0afbfe0c97e1a2cb94078adf9f8cd27ffd1841b",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-home-file-paths",
+      "payloadHash": "sha256:68daa8ae9d8dd63ef437660aea639209e60b46c2e23c3c55b7f6d013334f369a",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-host-sdk-imports",
+      "payloadHash": "sha256:23227ea2f27f7a2cd509eaf220428f2bd5f582a820dbd07386a703b8c8dc322d",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-language-branching",
+      "payloadHash": "sha256:d22a70b2930ac9d2464105ac4a2c1fa537bb1c0ccba697d1604de8167f8a5488",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-language-facts-from-registry",
+      "payloadHash": "sha256:ca713f743ab09efca779dedd54d5037726ebdb48c9abbfaf4b1dde8384ca0ede",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-no-code-execution",
+      "payloadHash": "sha256:c076595ff398eedae9ed5f8e7e4eeaa4d126e4748ef03748d3de72629bc67495",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-no-message-classification",
+      "payloadHash": "sha256:e7b5a4fdbd9a569e46df38038ac7cd3862178ea8b199a1502ac68b0a413e320c",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-origin-ranges",
+      "payloadHash": "sha256:afec498f9817c93f45f85667a76093f611230eb04fc64050ca102bdd50f0acef",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-pack-data-helper-copies",
+      "payloadHash": "sha256:e05ab6d7fec049152c26956f001744f759484f0d1548efa76168fa45a44cbd6e",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-pack-data-runtime-names",
+      "payloadHash": "sha256:69ecdd08ee532fe1742aaa5c0176e476da568aa9568f83f4a40ba87e50a6ee03",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-pack-package-names",
+      "payloadHash": "sha256:59ec5475948cee780a2830e47896dbd8967219eafcba2adde6bd5614577b6eea",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-pack-rule-test-placement",
+      "payloadHash": "sha256:d26c782eb996b193f972c30498c5841f4fb6045c2b16cc26f4e008d0b292c2c5",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-provenance-writers",
+      "payloadHash": "sha256:e009709825e2c6531e2cb7f0099e4e8399283f5f3964f9545e4d0334c28a2d79",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-rule-documents-in-packs",
+      "payloadHash": "sha256:dc7d4e92ae9fa270a3dbdbc22eb4abb78a724f4d7d0b4cad1bccace39ab944bd",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-session-paths",
+      "payloadHash": "sha256:1ec6df908f38c6e83731fae140c1e88dc8c2d890ac9e99a1abd758284f6b0feb",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-start-state",
+      "payloadHash": "sha256:f3c36baf81c90194dae98443824789a36368c82559b72197b91016b0f0499956",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-store-reads-in-documents",
+      "payloadHash": "sha256:52397fde565727861c660dc9888e882302cbef797f88e945cf48e85506ab9deb",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-table-probes-in-storage",
+      "payloadHash": "sha256:74b1eb50c10d36e7f9e8ed8ba2c93a10918ce55d714793958b1184abbedb153a",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-ui-api-precedence",
+      "payloadHash": "sha256:5ecd42ff15cf03b6298f3bbed50088971b58846875b72a5a8abb92d79aa7fbed",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-ui-color-tokens",
+      "payloadHash": "sha256:bede96d1930d8527ac58d648688d978e4b4900074a34bbaf739d812597be77a2",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-ui-pure-modules",
+      "payloadHash": "sha256:afed4fb0d0d42a5aeaf4caecdd0dcab9a23b357cfad2fbdf2e931592037bb0d5",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-walk-limits",
+      "payloadHash": "sha256:a3b3588f9867d75fcc31de7215f6e0ebbc78a7e541866aaf6c20512ac78b6a66",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-walk-limits-native",
+      "payloadHash": "sha256:b125ca18af835a9e05c0665183204689b3e06dd84860f4290399c4484a44a5b8",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-workflow-script-facts",
+      "payloadHash": "sha256:bfccd3f10b0c3e1d3b8a7ebf98716db638cc00fa4baab1ec60ae132e81b4305a",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    },
+    {
+      "ruleId": "rerail-workflow-shared-conditions",
+      "payloadHash": "sha256:44662ae694208aefa3dc992cae09cd71cb79d96ee039ea081594d7d2e753d6d1",
+      "mode": "log",
+      "source": {
+        "kind": "pack",
+        "id": "rerail",
+        "packId": "rerail"
+      }
+    }
+  ],
+  "violations": [
+    {
+      "ruleId": "rerail-workflow-shared-conditions",
+      "payloadHash": "sha256:44662ae694208aefa3dc992cae09cd71cb79d96ee039ea081594d7d2e753d6d1",
+      "mode": "log",
+      "code": "RELEASE_PR_SKIP_REPEATED",
+      "clauseId": "release-skip-2",
+      "path": ".github/workflows/ci.yml",
+      "start": {
+        "line": 346,
+        "column": 25
+      },
+      "end": {
+        "line": 346,
+        "column": 46
+      },
+      "message": "Work out the release pull request skip once, as an output of a job the others need (ci.yml's changes job), and read that output in each job instead of repeating the branch test.",
+      "fingerprint": "e7b8bfeee1c3c67007fbdad77d7df6bb"
+    },
+    {
+      "ruleId": "rerail-workflow-shared-conditions",
+      "payloadHash": "sha256:44662ae694208aefa3dc992cae09cd71cb79d96ee039ea081594d7d2e753d6d1",
+      "mode": "log",
+      "code": "RELEASE_PR_SKIP_REPEATED",
+      "clauseId": "release-skip-3",
+      "path": ".github/workflows/ci.yml",
+      "start": {
+        "line": 401,
+        "column": 66
+      },
+      "end": {
+        "line": 401,
+        "column": 87
+      },
+      "message": "Work out the release pull request skip once, as an output of a job the others need (ci.yml's changes job), and read that output in each job instead of repeating the branch test.",
+      "fingerprint": "614f56ba416a4a88752d08e2beca9fb0"
+    },
+    {
+      "ruleId": "rerail-workflow-shared-conditions",
+      "payloadHash": "sha256:44662ae694208aefa3dc992cae09cd71cb79d96ee039ea081594d7d2e753d6d1",
+      "mode": "log",
+      "code": "RELEASE_PR_SKIP_REPEATED",
+      "clauseId": "release-skip-4",
+      "path": ".github/workflows/ci.yml",
+      "start": {
+        "line": 490,
+        "column": 25
+      },
+      "end": {
+        "line": 490,
+        "column": 46
+      },
+      "message": "Work out the release pull request skip once, as an output of a job the others need (ci.yml's changes job), and read that output in each job instead of repeating the branch test.",
+      "fingerprint": "bb91983d2a2d1176b9e588c00c154283"
+    },
+    {
+      "ruleId": "rerail-workflow-shared-conditions",
+      "payloadHash": "sha256:44662ae694208aefa3dc992cae09cd71cb79d96ee039ea081594d7d2e753d6d1",
+      "mode": "log",
+      "code": "RELEASE_PR_SKIP_REPEATED",
+      "clauseId": "release-skip-5",
+      "path": ".github/workflows/ci.yml",
+      "start": {
+        "line": 683,
+        "column": 29
+      },
+      "end": {
+        "line": 683,
+        "column": 50
+      },
+      "message": "Work out the release pull request skip once, as an output of a job the others need (ci.yml's changes job), and read that output in each job instead of repeating the branch test.",
+      "fingerprint": "3bcb4f1f6026785d00f6f3c264874eb8"
+    },
+    {
+      "ruleId": "rerail-workflow-shared-conditions",
+      "payloadHash": "sha256:44662ae694208aefa3dc992cae09cd71cb79d96ee039ea081594d7d2e753d6d1",
+      "mode": "log",
+      "code": "RELEASE_PR_SKIP_REPEATED",
+      "clauseId": "release-skip-6",
+      "path": ".github/workflows/ci.yml",
+      "start": {
+        "line": 926,
+        "column": 29
+      },
+      "end": {
+        "line": 926,
+        "column": 50
+      },
+      "message": "Work out the release pull request skip once, as an output of a job the others need (ci.yml's changes job), and read that output in each job instead of repeating the branch test.",
+      "fingerprint": "b16f8eb62bdaa4decfc4614181f91ecc"
+    },
+    {
+      "ruleId": "rerail-workflow-shared-conditions",
+      "payloadHash": "sha256:44662ae694208aefa3dc992cae09cd71cb79d96ee039ea081594d7d2e753d6d1",
+      "mode": "log",
+      "code": "RELEASE_PR_SKIP_REPEATED",
+      "clauseId": "release-skip-7",
+      "path": ".github/workflows/ci.yml",
+      "start": {
+        "line": 999,
+        "column": 29
+      },
+      "end": {
+        "line": 999,
+        "column": 50
+      },
+      "message": "Work out the release pull request skip once, as an output of a job the others need (ci.yml's changes job), and read that output in each job instead of repeating the branch test.",
+      "fingerprint": "36353e7dd8324101a5479da275b16d47"
+    },
+    {
+      "ruleId": "rerail-workflow-script-facts",
+      "payloadHash": "sha256:bfccd3f10b0c3e1d3b8a7ebf98716db638cc00fa4baab1ec60ae132e81b4305a",
+      "mode": "log",
+      "code": "TOOL_PACK_BY_NAME",
+      "clauseId": "pack-name-test",
+      "path": ".github/workflows/upstream-bump.yml",
+      "start": {
+        "line": 161,
+        "column": 13
+      },
+      "end": {
+        "line": 161,
+        "column": 33
+      },
+      "message": "Decide this from the pack's own data (a tool-pack's gates.yaml runtime) through a planning step's output, not its name, so a new pack that needs it is covered. Leave placeholders like 'all'.",
+      "fingerprint": "84607711e32450af3732cf2f0019a849"
+    },
+    {
+      "ruleId": "rerail-workflow-script-facts",
+      "payloadHash": "sha256:bfccd3f10b0c3e1d3b8a7ebf98716db638cc00fa4baab1ec60ae132e81b4305a",
+      "mode": "log",
+      "code": "TOOL_PACK_BY_NAME",
+      "clauseId": "pack-name-test",
+      "path": ".github/workflows/upstream-bump.yml",
+      "start": {
+        "line": 161,
+        "column": 37
+      },
+      "end": {
+        "line": 161,
+        "column": 59
+      },
+      "message": "Decide this from the pack's own data (a tool-pack's gates.yaml runtime) through a planning step's output, not its name, so a new pack that needs it is covered. Leave placeholders like 'all'.",
+      "fingerprint": "ac3a6435910b227b7c26f45809303f83"
+    },
+    {
+      "ruleId": "rerail-fixed-value-lists",
+      "payloadHash": "sha256:a4dc855a99e1784d19096469557d0586104535a188bc8471d663146101da553b",
+      "mode": "log",
+      "code": "HOST_LIST_RESTATED",
+      "clauseId": "hosts",
+      "path": "integration/support/parity-harness.ts",
+      "start": {
+        "line": 1,
+        "column": 29
+      },
+      "end": {
+        "line": 1,
+        "column": 76
+      },
+      "message": "Use RERAIL_HOSTS from src/engine/adapter-contract.ts (via src/engine outside src/): the array, z.enum(RERAIL_HOSTS) or its [number] type. Leave lists with other values alone.",
+      "fingerprint": "e96df2803b75f807131180c5198ae87f"
+    },
+    {
+      "ruleId": "rerail-language-facts-from-registry",
+      "payloadHash": "sha256:ca713f743ab09efca779dedd54d5037726ebdb48c9abbfaf4b1dde8384ca0ede",
+      "mode": "log",
+      "code": "HAND_KEPT_LANGUAGE_LIST",
+      "clauseId": "rust-hand-kept-language-list",
+      "path": "native/src/code_rule_dsl/calls/closure.rs",
+      "start": {
+        "line": 510,
+        "column": 5
+      },
+      "end": {
+        "line": 512,
+        "column": 49
+      },
+      "message": "Take these from the registry (label_of_path, the tables language.rs includes) or move this code into its family's module; formats outside the registry and a resolver's probe order may stay.",
+      "fingerprint": "8f88372759694391f5c0d79749d13bef"
+    },
+    {
+      "ruleId": "rerail-language-branching",
+      "payloadHash": "sha256:d22a70b2930ac9d2464105ac4a2c1fa537bb1c0ccba697d1604de8167f8a5488",
+      "mode": "log",
+      "code": "LANGUAGE_BRANCH",
+      "clauseId": "rust-language-branch",
+      "path": "native/src/code_rule_dsl/compile/import_target.rs",
+      "start": {
+        "line": 89,
+        "column": 8
+      },
+      "end": {
+        "line": 89,
+        "column": 44
+      },
+      "message": "Move this choice into the family's Engine Adapter (called through with_adapter!) or the registry's data. If the code serves one family only, move it to that family's module rather than drop the check.",
+      "fingerprint": "2318f67091927c40ecaaf0c4b14172b1"
+    },
+    {
+      "ruleId": "rerail-grammar-node-kinds",
+      "payloadHash": "sha256:a1cdc7528e4986f5082137c9a27d82c329f2cc4f7cb73900cf5a9adbe49150ae",
+      "mode": "log",
+      "code": "GRAMMAR_NODE_KIND",
+      "clauseId": "shared-code",
+      "path": "native/src/code_rule_dsl/compile/resolve.rs",
+      "start": {
+        "line": 442,
+        "column": 26
+      },
+      "end": {
+        "line": 442,
+        "column": 75
+      },
+      "message": "Grammar node kinds are per-grammar names: put this kind on the family's Engine Adapter (a constant such as COMMENT_KINDS, PREAMBLE_KINDS or BODY_KINDS on Adapter, or REFERENCE_KINDS/NAME_KINDS on ScopeRules and EXPRESSION_KINDS/VALUE_KINDS on ValueRules) and read it through with_adapter!(Family::of(dialect), A => A::...). If this code only runs once one family is chosen (its only callers are that family's adapter impl or modules), move it into that family's module or name the function for the family.",
+      "fingerprint": "61a12cd60baa58f7e5b82cf7f486e76c"
+    }
+  ],
+  "failures": [],
+  "summary": {
+    "violations": 12,
+    "failures": 0
+  }
+}

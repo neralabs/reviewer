@@ -147,3 +147,13 @@ test("a reply in a finding thread on a fork PR is skipped: it runs without secre
   assert.equal(d.mode, "skip");
   assert.match(d.reason, /fork PR thread replies get no secrets; comment "@example-reviewer rereview <feedback>" at top level/);
 });
+
+test("a scheduled or manual run is a scan of the branch; other events, and inherited object keys, are ignored", async () => {
+  for (const event of ["schedule", "workflow_dispatch"]) {
+    const d = await decide(event, { sender: human }, cfg, deps());
+    assert.equal(d.mode, "scan", event);
+    assert.equal(d.pr, undefined);
+  }
+  assert.equal((await decide("push", { sender: human }, cfg, deps())).mode, "skip");
+  assert.equal((await decide("toString", { sender: human }, cfg, deps())).mode, "skip");
+});

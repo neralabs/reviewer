@@ -293,7 +293,9 @@ export async function prepare(s: Settings): Promise<Manifest> {
   const reviews = await listReviews(gh, s.repo, gate.pr);
   const state = latestState(reviews, s.botLogin);
   const threads = await findingThreads(gh, s.repo, gate.pr, s.botLogin);
-  const prior = (state?.findings ?? []).map((f) => {
+  // Findings the rules pass added are its own to re-check (by fingerprint, in the poster): the first pass never sees
+  // module output, earlier or current.
+  const prior = (state?.findings ?? []).filter((f) => f.src !== "rules").map((f) => {
     const thread = threads.find((t) => t.findingId === f.id);
     return { ...f, threadUrl: thread?.url, replies: thread?.replies.filter((r) => r.author !== s.botLogin.replace(/\[bot\]$/, "")) ?? [] };
   });

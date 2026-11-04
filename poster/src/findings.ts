@@ -108,3 +108,16 @@ export function reviewComment(f: Finding, body: string): Record<string, unknown>
     ? { path: f.path, start_line: f.line, start_side: "RIGHT", line: f.endLine, side: "RIGHT", body }
     : { path: f.path, line: f.line, side: "RIGHT", body };
 }
+
+/**
+ * Gives every finding a unique id (findings.ts renumber), then points each rules-pass overlap at its first-pass
+ * finding's new id.
+ */
+export function renumberWithOverlaps(findings: readonly Finding[], priorIds: readonly string[]): Finding[] {
+  const renumbered = renumber(findings, priorIds);
+  const newId = new Map<string, string>();
+  findings.forEach((f, i) => {
+    if (f.id && !newId.has(f.id)) newId.set(f.id, renumbered[i]!.id);
+  });
+  return renumbered.map((f) => (f.source?.overlaps ? { ...f, source: { ...f.source, overlaps: newId.get(f.source.overlaps) ?? f.source.overlaps } } : f));
+}

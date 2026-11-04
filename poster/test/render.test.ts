@@ -37,6 +37,7 @@ const input: SummaryInput = {
   runUrl: "https://example.test/run",
   handle: "@example-reviewer",
   team: "@neralabs/reviewer",
+  notes: [],
   state: { v: 1, sha: "a5a0171b", findings: [] },
 };
 

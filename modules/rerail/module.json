@@ -1,0 +1,7 @@
+{
+  "id": "rerail",
+  "name": "Rerail rules",
+  "description": "Checks the change against the repository's Rerail rules (.rerail/rules/ and rule packs), with the rules from the base branch. Rule modes map to levels: block is error, steer is warning, log is note.",
+  "inputs": ["rerail_package", "rerail_packs", "rerail_repo_packs"],
+  "secrets": ["RERAIL_PACKAGE_URL"]
+}

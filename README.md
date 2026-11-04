@@ -11,6 +11,7 @@ Pull request review by Claude Code, run in GitHub Actions when someone asks for 
 - Approves only low-risk PRs: no blockers, green CI, no high-risk paths, not from a fork or a bot, and approvals switched on for the repo.
 - Escalates to the code owners in `CODEOWNERS` when a change needs a human: a blocker on an owned path, high risk, or a design question.
 - Re-reviews only the new commits when asked again, resolves the threads of fixed findings, and takes feedback on its findings.
+- Optionally runs deterministic [modules](docs/modules.md) beside the review, such as a repository's [Rerail](docs/rerail.md) rules. A second, smaller rules pass turns their new findings into labelled recommendations. A new breach of an enforced rule is a blocker. The first review never sees module output. On a schedule, the same modules scan the whole branch.
 
 The bot posts as a GitHub App you create. This repository's examples use the app `neralabs-reviewer` (handle `@neralabs-reviewer`) and the team `@neralabs/reviewer`.
 
@@ -78,19 +79,23 @@ Commands addressed to the team (`@<org>/<team_slug> review`) work like commands 
 ## Repository layout
 
 ```
-.github/workflows/review.yml   reusable workflow: gate, review, post, respond, report-failure
+.github/workflows/review.yml   reusable workflow: gate, modules, review, rules-pass, post, send, respond, report-failure
+modules/                       deterministic checks beside the review (modules/rerail/: Rerail rules)
 skill/review/SKILL.md          multi-agent review skill
 skill/review/team-context.md   review bar shared by every target repository
 agents/                        vendored ECC reviewer agents (MIT)
 prompts/review.md              first review
 prompts/rereview.md            delta review plus feedback
+prompts/rules-pass.md          the rules pass over the modules' new findings
 schema/findings.schema.json    contract between the review job and the poster
+schema/module-results.schema.json  what a module returns
+schema/rules-pass.schema.json  what the rules pass returns
 poster/                        gate, context preparation, posting (TypeScript run directly by Node 24)
 scripts/run-claude.sh          the locked-down claude -p invocation
 infra/bedrock.yml              CloudFormation example: a scoped Bedrock key user and a monthly budget
 templates/caller.yml           caller workflow that target repositories copy
 templates/REVIEW.md            REVIEW.md template
-docs/                          architecture, security model, configuration, privacy, versioning
+docs/                          architecture, security model, configuration, privacy, versioning, modules, Rerail
 ```
 
 ## Contributing

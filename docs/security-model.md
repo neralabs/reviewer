@@ -40,6 +40,25 @@ The repository's `REVIEW.md`, `CLAUDE.md`, `AGENTS.md` and `CODEOWNERS`, and the
 
 Changes to `.github/`, `REVIEW.md` and `CODEOWNERS` are always high-risk, so the bot never approves them.
 
+## Modules and the rules pass
+
+- **No bias:** module output never reaches the review's first pass, not in its prompt, bundle or earlier findings.
+  The rules pass is a separate job that reads only the review's findings and the modules' new findings.
+- **The rules pass is read-only:** it has `Read` alone, over its two input files, and no shell. Module messages come
+  from rule files in the repository, so they are data to it, not instructions.
+- **The merge is deterministic:** location, check and level cap come from the module's result, never from the
+  model, and the review's own findings are never changed or dropped ([architecture.md](architecture.md#modules-and-the-rules-pass)).
+- **Configuration from the base branch only:** a module gets a checkout of the base branch's tip and takes its
+  configuration only from there. The Rerail module approves rules and repository packs from that checkout alone,
+  through Rerail's normal approval. Pack paths resolve inside that checkout, and a path or symlink leading out of it
+  fails the module ([rerail.md](rerail.md)).
+- **No keys:** modules run in a job with a read-only token (not persisted) and their own inputs; for Rerail, a
+  package URL, and the results sink's token only during its install, unset before `npm` runs. They read the pull
+  request's files and never run them.
+- **Every result is checked:** paths, ids and fingerprints must be plain, and a result that breaks the contract counts
+  as failed as a whole.
+- **The results sink** gets only the modules' records, from a job holding only its URL and token.
+
 ## Output sanitisation and redaction
 
 The poster validates `findings.json` against the schema, then passes every model string it posts through one sanitiser: the summary, findings, earlier findings' evidence (including the "Marked moot" thread reply), the escalation and risk reasons, and suggested `REVIEW.md` lines. It:
