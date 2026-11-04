@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import type { CiState } from "../src/ci.ts";
 import { decide, type GateConfig, type GateDeps, type PullRequest } from "../src/gate.ts";
+import { DEFAULT_CONFIG, type ReviewConfig } from "../src/review-config.ts";
 import { findingMarker } from "../src/text.ts";
 
 const cfg: GateConfig = { repo: { owner: "neralabs" }, teamSlug: "reviewer", handle: "@example-reviewer", botLogin: "example-reviewer[bot]" };
@@ -18,11 +20,16 @@ function pr(overrides: Partial<PullRequest> = {}, fork = false): PullRequest {
   };
 }
 
-function deps(over: Partial<GateDeps> & { perms?: Record<string, string>; pull?: PullRequest } = {}): GateDeps {
+type DepsOver = Partial<GateDeps> & { perms?: Record<string, string>; pull?: PullRequest; config?: ReviewConfig; ci?: CiState; reviewed?: boolean };
+
+function deps(over: DepsOver = {}): GateDeps {
   return {
     permission: async (user) => over.perms?.[user] ?? "write",
     pullRequest: async () => over.pull ?? pr(),
     reviewComment: over.reviewComment ?? (async () => ({ user: { login: "someone" }, body: "" })),
+    reviewConfig: async () => over.config ?? DEFAULT_CONFIG,
+    ciState: async () => over.ci ?? "pass",
+    botReviewed: async () => over.reviewed ?? false,
   };
 }
 
@@ -156,4 +163,51 @@ test("a scheduled or manual run is a scan of the branch; other events, and inher
   }
   assert.equal((await decide("push", { sender: human }, cfg, deps())).mode, "skip");
   assert.equal((await decide("toString", { sender: human }, cfg, deps())).mode, "skip");
+});
+
+// Dependency PRs: CI finishing (workflow_run) reviews a listed bot's PR without anyone asking.
+const dependabot = { login: "dependabot[bot]", type: "Bot" };
+const depConfig: ReviewConfig = { ...DEFAULT_CONFIG, dependencyUpdates: { authors: ["dependabot[bot]"], pushers: ["neralabs-ci[bot]"], pinFiles: [], knownGaps: {} } };
+const depPr = (over: Partial<PullRequest> = {}) => pr({ user: dependabot, ...over });
+const ciDone = (over: Record<string, unknown> = {}, sender = dependabot) => ({
+  action: "completed",
+  sender,
+  workflow_run: { event: "pull_request", conclusion: "success", head_sha: "head123", pull_requests: [{ number: 7 }], ...over },
+});
+
+test("CI passing on a listed dependency bot's PR starts a review, even though a bot sent the event", async () => {
+  const d = await decide("workflow_run", ciDone(), cfg, deps({ pull: depPr(), config: depConfig }));
+  assert.deepEqual([d.mode, d.trigger, d.pr, d.headSha, d.isFork], ["review", "dependency", 7, "head123", false]);
+  // The pins workflow's push: CI ran as that bot, the PR is still Dependabot's.
+  const pins = await decide("workflow_run", ciDone({}, { login: "neralabs-ci[bot]", type: "Bot" }), cfg, deps({ pull: depPr(), config: depConfig }));
+  assert.equal(pins.mode, "review");
+});
+
+test("a CI run reviews nothing unless every condition holds", async () => {
+  const cases: [string, Record<string, unknown>, DepsOver, RegExp][] = [
+    ["requested", { action: "requested" }, {}, /not handled/],
+    ["push run", { workflow_run: { ...ciDone().workflow_run, event: "push" } }, {}, /push/],
+    ["failed run", { workflow_run: { ...ciDone().workflow_run, conclusion: "failure" } }, {}, /failure/],
+    ["no PR (a fork's run lists none)", { workflow_run: { ...ciDone().workflow_run, pull_requests: [] } }, {}, /0 pull requests/],
+    ["a person's PR", {}, { pull: pr() }, /not a dependency bot/],
+    ["no dependencyUpdates", {}, { config: DEFAULT_CONFIG }, /not a dependency bot/],
+    ["broken REVIEW.md", {}, { config: { ...depConfig, error: "bad" } }, /not a dependency bot/],
+    ["stale run", { workflow_run: { ...ciDone().workflow_run, head_sha: "old456" } }, {}, /head is now/],
+    ["closed PR", {}, { pull: depPr({ state: "closed" }) }, /not open/],
+    ["draft PR", {}, { pull: depPr({ draft: true }) }, /draft/],
+    ["fork PR", {}, { pull: { ...depPr(), head: { sha: "head123", ref: "x", repo: { full_name: "someone/rerail" } } } }, /fork/],
+    ["already reviewed", {}, { reviewed: true }, /already reviewed/],
+    ["other checks still running", {}, { ci: "pending" }, /CI is pending/],
+    ["another check failed", {}, { ci: "fail" }, /CI is fail/],
+  ];
+  for (const [name, payload, over, why] of cases) {
+    const d = await decide("workflow_run", { ...ciDone(), ...payload }, cfg, deps({ pull: depPr(), config: depConfig, ...over }));
+    assert.equal(d.mode, "skip", name);
+    assert.match(d.reason, why, name);
+  }
+});
+
+test("bots still can't trigger anything else", async () => {
+  const d = await decide("issue_comment", { ...comment("@example-reviewer review", dependabot) }, cfg, deps());
+  assert.equal(d.mode, "skip");
 });

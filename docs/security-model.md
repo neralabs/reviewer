@@ -38,7 +38,20 @@ A PR could add a symlink such as `x -> /proc/self/environ` to point the model's 
 
 The repository's `REVIEW.md`, `CLAUDE.md`, `AGENTS.md` and `CODEOWNERS`, and the settings block in `REVIEW.md` (high-risk paths, generated paths, large-PR threshold), are read from the base branch, never from the PR. A PR can't lower the bar it is judged by, hide its own files as generated, or change who gets escalations. The poster re-reads `REVIEW.md` and `CODEOWNERS` from GitHub itself rather than trusting the review job's copy.
 
-Changes to `.github/`, `REVIEW.md` and `CODEOWNERS` are always high-risk, so the bot never approves them.
+Changes to `.github/`, `REVIEW.md` and `CODEOWNERS` are always high-risk, so the bot never approves them. The one exception is a dependency bot's PR that passes the guards below. Even then, `REVIEW.md`, `CODEOWNERS`, `.github/dependabot.yml` and a bump of the reviewer itself never pass.
+
+## Dependency PRs
+
+A repository can list dependency bots in `REVIEW.md` `dependencyUpdates` (base branch only). Their PRs are reviewed when CI finishes, without anyone asking, and they can be approved even though they touch manifests, lock files and workflows. That approval counts toward branch protection, so it rests on checks the PR's content can't steer:
+
+- **Who wrote every commit.** Every commit's GitHub author is a listed bot, and its committer is that bot or GitHub's `web-flow` with a verified signature. A person who pushes to a Dependabot branch turns the exemption off for that PR. GitHub links a commit author only from the identity behind the push: a bot can't set it by choosing an email address, and an unlinked author fails the check.
+- **What changed.** The PR may change only lock files, `pinFiles`, and manifests and workflows whose diff is version strings and SHAs alone. A dependency bot that has been compromised, or a Dependabot PR someone edited, can't add an install script, a dependency, a workflow step or a reviewer bump and still be approved.
+- **Everything else still holds:** approvals on, no blockers, CI green at the head, not a fork, head unchanged since the review, a full review, and no `needsRun` findings except ones that restate a declared CI gap.
+- **The verdict stays with the poster.** The model never decides that a PR is a dependency PR or that the guards hold. Release notes, changelogs and the PR description are written by whoever controls the dependency, and the model treats them as data.
+
+What the guards can't see is the dependency's own code. A malicious release that keeps its version-bump shape passes them. The review looks at the lock files for new install scripts, packages from other registries, new transitive packages and changed publishers. CI builds and tests the release, and the caller decides whether to auto-merge. Planned follow-up: deterministic lock-file checks (a package newly marked `hasInstallScript`, a `resolved` or `source` URL outside the default registry) as further guards.
+
+Secrets: GitHub gives a run started by Dependabot only Dependabot secrets. Its docs say so for `pull_request`, `push` and the review events, and say nothing about a `workflow_run` started by a Dependabot run. Store the reviewer's secrets (the app key and the model key) as Dependabot secrets too, under the same names. The gate logs the run's actor and triggering actor, so a missing secret can be traced.
 
 ## Modules and the rules pass
 
@@ -86,7 +99,7 @@ The review job uploads the Claude Code session as the `reviewer-transcript` arti
 
 ## pull_request_target only
 
-PR events are accepted only as `pull_request_target`, which runs the caller workflow from the base branch. On `pull_request`, GitHub runs the PR's own copy of the caller, so a PR could rewrite its reviewer configuration (turn approvals on, point at another reviewer ref) and approve itself. The gate ignores `pull_request`. `pull_request_target` is safe here only because nothing from the PR is executed; keep it that way in any change to the workflow.
+PR events are accepted only as `pull_request_target` (and `workflow_run`, below), which runs the caller workflow from the base branch. On `pull_request`, GitHub runs the PR's own copy of the caller, so a PR could rewrite its reviewer configuration (turn approvals on, point at another reviewer ref) and approve itself. The gate ignores `pull_request`. `pull_request_target` is safe here only because nothing from the PR is executed; keep it that way in any change to the workflow. `workflow_run` likewise runs the caller from the default branch. The gate takes only the run's PR number and head SHA from it, re-reads the PR from the API, and reviews only a listed dependency bot's PR.
 
 ## Per-job scoped app tokens
 
@@ -104,7 +117,7 @@ A caller runs whatever the reviewer ref it names contains, with its secrets. Pin
 
 ## Accepted risk: approvals survive pushes
 
-The bot's approval stays through later pushes, like a human approval in a repository that doesn't dismiss stale approvals. An approval can therefore stand on code the bot never saw. The approval is recorded on the commit it reviewed, and the summary names it. Callers that need otherwise should require approval of the most recent push in their branch protection or ruleset, or dismiss stale approvals on push.
+The bot's approval stays through later pushes, like a human approval in a repository that doesn't dismiss stale approvals. An approval can therefore stand on code the bot never saw. The approval is recorded on the commit it reviewed, and the summary names it. Callers that need otherwise should require approval of the most recent push in their branch protection or ruleset, or dismiss stale approvals on push. A caller that auto-merges approved dependency PRs should merge only the reviewed commit (`gh pr merge --auto --match-head-commit <sha>`).
 
 ## Other limits
 

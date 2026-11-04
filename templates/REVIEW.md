@@ -29,7 +29,7 @@ Where a mistake costs the most, and what to look for there:
 
 ## Reviewer settings
 
-Machine-readable. Paths use CODEOWNERS syntax and add to the defaults. A PR touching a high-risk path is never auto-approved. `generatedPaths` lists files nobody writes by hand (generated code, snapshots, goldens, vendored upstream data, licence texts): the reviewer sees only a listing and a small sample of them, so its budget goes on the written code. `largePrLines` (optional) sets the changed-line count above which the review is summary-only, overriding the default of 50,000; generated paths don't count toward it. If this block doesn't parse, approval is off and the review says why.
+Machine-readable. Paths use CODEOWNERS syntax and add to the defaults. A PR touching a high-risk path is never auto-approved. `generatedPaths` lists files nobody writes by hand (generated code, snapshots, goldens, vendored upstream data, licence texts): the reviewer sees only a listing and a small sample of them, so its budget goes on the written code. `largePrLines` (optional) sets the changed-line count above which the review is summary-only, overriding the default of 50,000; generated paths don't count toward it. `dependencyUpdates` (optional) lists dependency bots (Dependabot) whose PRs are reviewed when CI finishes and can be approved despite touching manifests, lock files and workflows, when every commit is the bot's and the diff only changes versions (docs/configuration.md, "Dependency PRs"). Its `knownGaps` name CI jobs that don't run for those PRs. If this block doesn't parse, approval is off and the review says why.
 
 ```json reviewer
 {

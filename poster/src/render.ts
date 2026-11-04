@@ -12,6 +12,8 @@ export interface Finding {
   fix: string;
   confidence: "high" | "medium";
   needsRun: boolean;
+  /** A known CI gap id (REVIEW.md dependencyUpdates.knownGaps) this needs-run finding restates. Model output: shown, never trusted alone. */
+  knownGap?: string;
   /** Set on findings the rules pass added: the module finding behind it. */
   source?: { pass: "rules"; module: string; checkId: string; fingerprint: string; overlaps?: string };
   /** Checks the rules pass says a first-pass finding also breaks. */
@@ -75,7 +77,7 @@ export function tally(levels: readonly Level[]): string {
 function findingBlock(f: Finding): string {
   const parts = [`**[${f.level}] ${sanitizeModelText(f.title)}**`, sanitizeModelText(f.evidence), `**Fix:** ${sanitizeModelText(f.fix)}`];
   parts.splice(1, 0, ...origin(f));
-  if (f.needsRun) parts.push("_needs-run: only a local run can settle this._");
+  if (f.needsRun) parts.push(f.knownGap ? `_needs-run, known CI gap ${codeSpan(f.knownGap)}: CI doesn't run this for the PR._` : "_needs-run: only a local run can settle this._");
   if (f.confidence === "medium") parts.push("_Confidence: medium._");
   return parts.join("\n\n");
 }
