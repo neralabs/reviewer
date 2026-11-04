@@ -100,3 +100,60 @@ test("without CODEOWNERS, escalation is needed but has nobody to request", () =>
   const result = decideEscalation({ ...esc, codeowners: undefined, modelNeeded: true });
   assert.deepEqual(result, { needed: true, owners: [], paths: esc.changedPaths, noCodeowners: true });
 });
+
+// Dependency PRs (dependency.ts decides `applies` from GitHub data; here only its effect on the verdict).
+const depConfig = {
+  ...DEFAULT_CONFIG,
+  dependencyUpdates: { authors: ["dependabot[bot]"], pushers: [], pinFiles: [], knownGaps: { "pack-data": "OIDC jobs skip for Dependabot" } },
+};
+const depPr: PolicyInput = {
+  ...lowRisk,
+  config: depConfig,
+  authorIsBot: true,
+  changedPaths: ["package.json", "package-lock.json", ".github/workflows/ci.yml"],
+  dependency: { applies: true, failed: [] },
+};
+
+test("an exempt dependency PR is approved despite high-risk paths and a bot author", () => {
+  assert.deepEqual(decideVerdict(depPr), { verdict: "approve", notApprovedBecause: [] });
+});
+
+test("the exemption lifts only those two rules", () => {
+  const variants: [Partial<PolicyInput>, RegExp][] = [
+    [{ ciState: "pending" }, /CI is pending/],
+    [{ headCurrent: false }, /new commits/],
+    [{ isFork: true }, /fork/],
+    [{ approvalsEnabled: false }, /approvals are off/],
+    [{ summaryOnly: true }, /too large/],
+  ];
+  for (const [change, why] of variants) {
+    const result = decideVerdict({ ...depPr, ...change });
+    assert.equal(result.verdict, "comment", JSON.stringify(change));
+    assert.match(result.notApprovedBecause.join("; "), why);
+  }
+  assert.equal(decideVerdict({ ...depPr, findings: [{ level: "blocker", path: "package.json", needsRun: false }] }).verdict, "request_changes");
+});
+
+test("a dependency PR the guards refuse keeps today's rules and says why", () => {
+  const result = decideVerdict({ ...depPr, dependency: { applies: false, failed: ["commit 1234567 is by jeff, not a listed bot"] } });
+  assert.equal(result.verdict, "comment");
+  assert.deepEqual(result.notApprovedBecause, [
+    "the diff touches a high-risk path",
+    "the PR was opened by a bot",
+    "not exempt as a dependency update: commit 1234567 is by jeff, not a listed bot",
+  ]);
+});
+
+test("needs-run restating a declared known gap doesn't block an exempt dependency PR; any other needs-run does", () => {
+  const gap = { level: "follow-up" as const, path: "package.json", needsRun: true, knownGap: "pack-data" };
+  assert.equal(decideVerdict({ ...depPr, findings: [gap] }).verdict, "approve");
+  assert.equal(decideVerdict({ ...depPr, findings: [{ ...gap, level: "nit" }] }).verdict, "approve");
+  const blocked: [string, PolicyInput][] = [
+    ["no knownGap", { ...depPr, findings: [{ ...gap, knownGap: undefined }] }],
+    ["undeclared id", { ...depPr, findings: [{ ...gap, knownGap: "made-up" }] }],
+    ["inherited key", { ...depPr, findings: [{ ...gap, knownGap: "constructor" }] }],
+    ["not exempt", { ...depPr, dependency: { applies: false, failed: ["x"] }, findings: [gap] }],
+    ["not a dependency PR", { ...lowRisk, config: depConfig, findings: [gap] }],
+  ];
+  for (const [name, input] of blocked) assert.match(decideVerdict(input).notApprovedBecause.join("; "), /local run/, name);
+});

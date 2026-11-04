@@ -13,6 +13,8 @@ export interface PolicyFinding {
   level: Level;
   path: string;
   needsRun: boolean;
+  /** A REVIEW.md dependencyUpdates.knownGaps id the finding only restates (dependency PRs). */
+  knownGap?: string;
 }
 
 export interface PolicyInput {
@@ -29,6 +31,8 @@ export interface PolicyInput {
   approvalsEnabled: boolean;
   /** The review covered only a summary (large PR). */
   summaryOnly: boolean;
+  /** Dependency PRs only (dependency.ts): lifts the high-risk and bot-author rules when every guard holds. */
+  dependency?: { applies: boolean; failed: readonly string[] };
 }
 
 export interface PolicyResult {
@@ -37,23 +41,41 @@ export interface PolicyResult {
   notApprovedBecause: string[];
 }
 
+/**
+ * A needs-run finding that withholds approval. On a dependency PR the exemption admits, a follow-up or nit that only
+ * restates a known CI gap from the base branch's REVIEW.md doesn't: the gap is the repo's, declared up front, and the
+ * summary still lists it. Any other needs-run finding still does.
+ */
+function blocksAsNeedsRun(f: PolicyFinding, input: PolicyInput): boolean {
+  if (!f.needsRun) return false;
+  const gaps = input.config.dependencyUpdates?.knownGaps ?? {};
+  const restatesGap = f.knownGap !== undefined && Object.hasOwn(gaps, f.knownGap) && f.level !== "blocker";
+  return !(input.dependency?.applies && restatesGap);
+}
+
+/** A dependency PR the guards don't admit says why, beside the rules that then apply as usual. */
+function exemptionRefused(dependency: PolicyInput["dependency"]): string[] {
+  return dependency && !dependency.applies ? [`not exempt as a dependency update: ${dependency.failed.join("; ")}`] : [];
+}
+
 export function decideVerdict(input: PolicyInput): PolicyResult {
   const blockers = input.findings.filter((f) => f.level === "blocker").length;
   if (blockers > 0) return { verdict: "request_changes", notApprovedBecause: [] };
 
   const { config } = input;
+  const exempt = Boolean(input.dependency?.applies);
   const checks: [boolean, string][] = [
     [input.approvalsEnabled, "approvals are off for this repo"],
     [!config.error, config.error ?? ""],
-    [!input.findings.some((f) => f.needsRun), "a finding needs a local run to settle"],
+    [!input.findings.some((f) => blocksAsNeedsRun(f, input)), "a finding needs a local run to settle"],
     [input.ciState === "pass", `CI is ${input.ciState} at the head`],
-    [!input.changedPaths.some((p) => isHighRisk(p, config)), "the diff touches a high-risk path"],
+    [exempt || !input.changedPaths.some((p) => isHighRisk(p, config)), "the diff touches a high-risk path"],
     [!input.isFork, "the PR comes from a fork"],
-    [!input.authorIsBot, "the PR was opened by a bot"],
+    [exempt || !input.authorIsBot, "the PR was opened by a bot"],
     [input.headCurrent, "new commits landed while reviewing"],
     [!input.summaryOnly, "the PR was too large for a full review"],
   ];
-  const notApprovedBecause = checks.filter(([ok]) => !ok).map(([, why]) => why);
+  const notApprovedBecause = [...checks.filter(([ok]) => !ok).map(([, why]) => why), ...exemptionRefused(input.dependency)];
   return { verdict: notApprovedBecause.length === 0 ? "approve" : "comment", notApprovedBecause };
 }
 

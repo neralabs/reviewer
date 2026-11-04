@@ -6,16 +6,17 @@ For the threat model behind these choices, see [security-model.md](security-mode
 
 ## Activation
 
-The workflow runs on three events and ignores every other one.
+The workflow runs on four events and ignores every other one.
 
 - **Team review request.** Requesting the reviewer team fires `pull_request_target` with action `review_requested` and `requested_team.slug` equal to `team_slug`. The bot reviews once. After every review it removes the team request, so requesting the team again asks for another review: GitHub only clears a team request when a team member reviews, and the team has none. Removing the request does nothing. The bot never requests the team itself and ignores any bot's team request.
 - **Top-level comment** (`issue_comment` on a PR) holding a command for the app handle or the team.
 - **Reply in one of the bot's finding threads** (`pull_request_review_comment`).
+- **CI finished on a dependency PR** (`workflow_run`, opt-in). With `dependencyUpdates` in `REVIEW.md` and a `workflow_run` trigger on the repository's CI workflow in the caller, the bot reviews a listed dependency bot's PR without anyone asking: once per head, when the run succeeded, the run's commit is still the head, and every check at the head is done and green. Every other PR, and every other bot, still waits for a person. Like `pull_request_target`, `workflow_run` runs the caller from the default branch. Dependabot pushes its PR before CI, and a workflow such as Rerail's pin sync may push again, so reviewing when CI finishes is the first point at which an approval is possible.
 
 Rules the gate applies:
 
 - Only users with write access to the repository can trigger a run (`GET /repos/{owner}/{repo}/collaborators/{user}/permission`).
-- The bot never acts on comments by itself or any other bot.
+- The bot never acts on comments by itself or any other bot. The only bot-sent event it acts on is `workflow_run` for a listed dependency bot's PR.
 - Quoted lines and fenced code in a comment are ignored, so quoting a command doesn't fire it again.
 - In a finding-thread reply, text after the handle that isn't a command is feedback on that finding. Elsewhere an unknown command gets the help text.
 - Commands addressed to the team (`@<org>/<team_slug> review`) count like commands to the app, because people use the team as the bot's name. Any other mention of the team is ignored, with no help reply. `re review` is accepted like `rereview`.
@@ -173,6 +174,20 @@ The model reports findings, risk and escalation. The **poster derives the verdic
 - the diff touches no high-risk path: `.github/`, `REVIEW.md` and `CODEOWNERS` always, plus those listed in `REVIEW.md`. Issue and pull request templates (`.github/ISSUE_TEMPLATE/`, `.github/PULL_REQUEST_TEMPLATE/`, `.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE.md`) are outside the built-in `.github/` entry, since no workflow runs them; a repository that wants them high-risk lists them in `REVIEW.md`;
 - the PR isn't from a fork and isn't authored by a bot;
 - the head hasn't moved since the reviewed SHA, and the review wasn't summary-only.
+
+**Dependency PRs.** For a PR whose author is listed in `REVIEW.md` `dependencyUpdates.authors`, the poster checks deterministic guards (`poster/src/dependency.ts`). When all of them hold, the high-risk-path and bot-author rules are lifted and every other rule still applies:
+
+- every commit on the PR is authored by a listed author or pusher, and committed by that same bot, or by GitHub (`web-flow`) with a verified signature, as Dependabot's commits are; there are no merge commits and fewer than 250 commits;
+- the PR is from the same repository;
+- every changed file is modified (not added, removed or renamed) and is one of:
+  - a lock file (the built-in list above);
+  - a `pinFiles` path from `REVIEW.md`;
+  - a manifest (`package.json`, `Cargo.toml`, `pyproject.toml`, `go.mod`, `Gemfile`, `composer.json`, `requirements*.txt`) or a workflow or composite action under `.github/workflows/` or `.github/actions/`, whose diff changes only version strings, commit SHAs and `# vX` comments: with those replaced by placeholders, the removed and added lines are the same. A new script, dependency name, step or `run:` line fails this check;
+- no changed line bumps the reviewer itself (its reusable workflow or `reviewer_ref`): changing the approver needs a person.
+
+`REVIEW.md`, `CODEOWNERS` and `.github/dependabot.yml` never pass. When the guards fail, the summary lists why, and the usual rules apply.
+
+On a PR the guards admit, a `needsRun` finding that is a follow-up or a nit and whose `knownGap` names a gap declared in `REVIEW.md` `dependencyUpdates.knownGaps` doesn't withhold approval. Those gaps are CI jobs that don't run for the bot's PRs (Dependabot runs get no OIDC token and only Dependabot secrets). The finding is still posted, marked with the gap. A `knownGap` that names no declared gap is dropped, and any other `needsRun` finding withholds approval as usual. The model chooses whether to mark `needsRun` at all, so letting it say that a finding only restates a gap gives it no new power. The gap ids come only from the base branch.
 
 When a PR isn't approved, the summary says which rules failed. The model's `risk.level` is not a rule; it drives escalation only. Anything that must stop a merge is a blocker. There is no size limit on approvals.
 

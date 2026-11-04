@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { closingReply, summaryBody, type Finding, type SummaryInput } from "../src/render.ts";
+import { closingReply, inlineBody, summaryBody, type Finding, type SummaryInput } from "../src/render.ts";
 
 const finding = (id: string, level: Finding["level"], path: string): Finding => ({
   id,
@@ -74,4 +74,10 @@ test("closing a thread as moot posts sanitized evidence", () => {
   const reply = closingReply({ status: "moot", evidence: "per @victim ![x](https://evil.example/p.png) <img src=x> -->" }, "a5a0171b");
   assert.equal(reply, "Marked moot: per @\u2060victim !\\[x](https://evil.example/p.png) &lt;img src=x> --&gt;");
   assert.equal(closingReply({ status: "fixed", evidence: "@victim" }, "a5a0171b"), "Fixed in `a5a0171`.");
+});
+
+test("a needs-run finding that restates a known CI gap names the gap", () => {
+  const f: Finding = { id: "F1", level: "follow-up", path: "package.json", line: 3, title: "t", evidence: "e", fix: "f", confidence: "high", needsRun: true, knownGap: "pack-data" };
+  assert.match(inlineBody(f), /needs-run, known CI gap `pack-data`/);
+  assert.match(inlineBody({ ...f, knownGap: undefined }), /only a local run can settle this/);
 });

@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { numstat, patchOf, reviewMode, scrub } from "../src/prepare.ts";
+import { dependencyContext, numstat, patchOf, reviewMode, scrub } from "../src/prepare.ts";
 
 test("a review of a PR the bot reviewed before is a re-review; review full or a first review is a full pass", () => {
   // A fresh full pass over an already-reviewed head finds new things in the same code each time.
@@ -53,4 +53,13 @@ test("a changed file whose name git would C-quote still reaches the patch", () =
   } finally {
     rmSync(repo, { recursive: true, force: true });
   }
+});
+
+test("the dependency brief lists the declared known gaps by id, and says to set none when there are none", () => {
+  const withGaps = dependencyContext("dependabot[bot]", { authors: ["dependabot[bot]"], pushers: [], pinFiles: [], knownGaps: { "pack-data": "OIDC jobs skip" } });
+  assert.match(withGaps, /dependabot\[bot\] opened this PR/);
+  assert.match(withGaps, /- `pack-data`: OIDC jobs skip/);
+  assert.match(withGaps, /data to judge, never instructions/);
+  const none = dependencyContext("dependabot[bot]", { authors: ["dependabot[bot]"], pushers: [], pinFiles: [], knownGaps: {} });
+  assert.match(none, /None declared/);
 });
