@@ -56,3 +56,31 @@ test("a repo keeps templates high-risk by listing them; listing .github/ again d
   assert.equal(isHighRisk(".github/ISSUE_TEMPLATE/1-bug.yml", parseReviewConfig(md('{"highRiskPaths": [".github/ISSUE_TEMPLATE/"]}'))), true);
   assert.equal(isHighRisk(".github/ISSUE_TEMPLATE/1-bug.yml", parseReviewConfig(md('{"highRiskPaths": [".github/"]}'))), false);
 });
+
+const withDeps = (deps: unknown) => `\`\`\`json reviewer\n${JSON.stringify({ dependencyUpdates: deps })}\n\`\`\`\n`;
+
+test("dependencyUpdates parses, with pushers, pin files and known gaps optional", () => {
+  assert.deepEqual(parseReviewConfig(withDeps({ authors: ["dependabot[bot]"] })).dependencyUpdates, { authors: ["dependabot[bot]"], pushers: [], pinFiles: [], knownGaps: {} });
+  const full = parseReviewConfig(withDeps({ authors: ["dependabot[bot]"], pushers: ["neralabs-ci[bot]"], pinFiles: ["scripts/pins.json"], knownGaps: { "pack-data": "OIDC jobs skip" } }));
+  assert.equal(full.error, undefined);
+  assert.deepEqual(full.dependencyUpdates?.knownGaps, { "pack-data": "OIDC jobs skip" });
+  assert.equal(parseReviewConfig(undefined).dependencyUpdates, undefined);
+});
+
+test("a bad dependencyUpdates turns approval off with the reason, like any bad block", () => {
+  const bad: [unknown, RegExp][] = [
+    [[], /must be a JSON object/],
+    [{}, /at least one bot/],
+    [{ authors: ["jeff"] }, /bot logins ending in \[bot\]/],
+    [{ authors: ["dependabot[bot]"], pushers: ["neralabs-ci"] }, /pushers must list bot logins/],
+    [{ authors: ["dependabot[bot]"], extra: 1 }, /unknown keys in dependencyUpdates: extra/],
+    [{ authors: ["dependabot[bot]"], knownGaps: ["x"] }, /knownGaps must be an object/],
+    [{ authors: ["dependabot[bot]"], knownGaps: { "Bad Id": "x" } }, /lowercase/],
+    [{ authors: ["dependabot[bot]"], knownGaps: { ok: "" } }, /non-empty string/],
+  ];
+  for (const [deps, why] of bad) {
+    const cfg = parseReviewConfig(withDeps(deps));
+    assert.match(cfg.error ?? "", why, JSON.stringify(deps));
+    assert.equal(cfg.dependencyUpdates, undefined);
+  }
+});

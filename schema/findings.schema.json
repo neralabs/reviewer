@@ -82,7 +82,11 @@
         "evidence": { "description": "A quote from the code, or the reasoning that proves the failure.", "type": "string" },
         "fix": { "type": "string" },
         "confidence": { "enum": ["high", "medium"] },
-        "needsRun": { "description": "Only a local run could settle this claim.", "type": "boolean" }
+        "needsRun": { "description": "Only a local run could settle this claim.", "type": "boolean" },
+        "knownGap": {
+          "description": "Dependency PRs only: the id of a known CI gap listed in context/dependency.md, when this needsRun finding only restates that gap. Leave it out otherwise.",
+          "type": "string"
+        }
       }
     }
   }

@@ -13,9 +13,10 @@ import type { Decision } from "./gate.ts";
 import { fileAt, GitHub, GitHubError, type RepoRef } from "./github.ts";
 import { readModuleResults } from "./modules.ts";
 import { parseCodeowners } from "./patterns.ts";
+import { dependencyExemption, type DependencyExemption, type PrCommit, type PrFile } from "./dependency.ts";
 import { decideEscalation, decideVerdict } from "./policy.ts";
 import type { Manifest } from "./prepare.ts";
-import { parseReviewConfig } from "./review-config.ts";
+import { isDependencyAuthor, parseReviewConfig, type ReviewConfig } from "./review-config.ts";
 import { closingReply, inlineBody, summaryBody, type Finding, type PriorStatus } from "./render.ts";
 import { dismissApproval, removeTeamRequest } from "./respond.ts";
 import { annotate, loadRulesPass, storedSource } from "./rules-pass.ts";
@@ -28,6 +29,22 @@ interface PullRequestDetail {
   head: { sha: string };
   base: { ref: string };
   requested_teams: { slug: string }[];
+}
+
+/** Keeps a finding's knownGap only when it names a gap the base branch's REVIEW.md declares. */
+function checkKnownGap(f: Finding, config: ReviewConfig): Finding {
+  if (f.knownGap === undefined) return f;
+  const gaps = config.dependencyUpdates?.knownGaps ?? {};
+  if (Object.hasOwn(gaps, f.knownGap)) return f;
+  const { knownGap: _dropped, ...rest } = f;
+  return rest;
+}
+
+/** The dependency exemption for a dependency PR (the commits are fetched only for one), else undefined. */
+async function dependencyFor(gh: GitHub, prPath: string, author: string, isFork: boolean, config: ReviewConfig, files: readonly PrFile[]): Promise<DependencyExemption | undefined> {
+  if (!isDependencyAuthor(author, config)) return undefined;
+  const commits = await gh.paginate<PrCommit>(`${prPath}/commits`);
+  return dependencyExemption({ author, isFork, config, commits, files });
 }
 
 const EVENT = { approve: "APPROVE", comment: "COMMENT", request_changes: "REQUEST_CHANGES" } as const;
@@ -106,7 +123,7 @@ export async function post(s: Settings): Promise<void> {
     appendSummary(`PR #${manifest.pr} is ${pr.state}; nothing posted.`);
     return;
   }
-  const files = await read.paginate<ChangedFile & { patch?: string }>(`${prPath}/files`);
+  const files = await read.paginate<ChangedFile & PrFile>(`${prPath}/files`);
   const config = parseReviewConfig(await fileAt(read, s.repo, "REVIEW.md", pr.base.ref));
   const codeownersText = await codeownersAt(read, s.repo, pr.base.ref);
   const reviews: Review[] = await listReviews(read, s.repo, manifest.pr);
@@ -118,11 +135,12 @@ export async function post(s: Settings): Promise<void> {
   const prior = mergePrior(stored, [...model.priorFindings, ...rules.rulings]);
   const changedPaths = files.map((f) => f.filename);
   const pass1 = annotate(normalizePaths(model.findings, changedPaths), rules.alsoBreaks);
-  const fresh: Finding[] = renumberWithOverlaps([...pass1, ...normalizePaths(rules.added, changedPaths)], stored.map((f) => f.id));
+  const fresh: Finding[] = renumberWithOverlaps([...pass1, ...normalizePaths(rules.added, changedPaths)], stored.map((f) => f.id)).map((f) => checkKnownGap(f, config));
   const placement = place(fresh, files);
   const openPrior = prior.filter((p) => p.status === "open");
 
   const ci = await ciAt(read, s.repo, pr.head.sha, await ownCheckSuite(read, s.repo));
+  const dependency = await dependencyFor(read, prPath, pr.user.login, Boolean(gate.isFork), config, files);
 
   const decided = decideVerdict({
     findings: [...fresh, ...openPrior.map((p) => ({ level: p.level, path: p.path, needsRun: false }))],
@@ -134,6 +152,7 @@ export async function post(s: Settings): Promise<void> {
     headCurrent: pr.head.sha === manifest.headSha,
     approvalsEnabled: s.approvalsEnabled,
     summaryOnly: manifest.summaryOnly,
+    dependency,
   });
 
   const problems: string[] = [];

@@ -23,7 +23,9 @@
 #   send     only RESULTS_SINK_URL and RESULTS_SINK_TOKEN, and only with send_results: the modules' results
 #            to the caller's results sink. No model key, no GitHub token, nothing a model wrote.
 #   respond  as post, plus organization members:read, for help / stop / failure reports.
-#            Pushes never start a job: they neither review nor withdraw the bot's approval.
+#            Pushes never start a job: they neither review nor withdraw the bot's approval. The one unasked review:
+#            a caller's workflow_run (CI finished) on a dependency bot's PR (docs/configuration.md). GitHub may give a
+#            run started by Dependabot only Dependabot secrets, so callers store these secrets there too.
 name: reviewer
 
 on:
@@ -149,7 +151,9 @@ env:
 jobs:
   gate:
     # Cheap prefilter, so most events never start a runner: pushes (they neither review nor withdraw an
-    # approval), ordinary comments, fork PRs' team requests and thread replies, and any bot's team request. PR events count only
+    # approval), ordinary comments, fork PRs' team requests and thread replies, and any bot's team request. A
+    # workflow_run (CI finished) passes only for a successful same-repo pull_request run; the gate then reviews it only
+    # for a dependency bot's PR (REVIEW.md dependencyUpdates). PR events count only
     # as pull_request_target, which runs the caller from the base branch: on pull_request GitHub runs the
     # PR's own copy of the caller, which the PR could rewrite (approvals on, another reviewer ref).
     if: >-
@@ -165,11 +169,22 @@ jobs:
         && github.event.comment.user.type != 'Bot'
         && (contains(github.event.comment.body, inputs.handle)
           || contains(github.event.comment.body, format('@{0}/{1}', github.repository_owner, inputs.team_slug))))
+      || (github.event_name == 'workflow_run'
+        && github.event.action == 'completed'
+        && github.event.workflow_run.event == 'pull_request'
+        && github.event.workflow_run.conclusion == 'success'
+        && github.event.workflow_run.head_repository.full_name == github.repository)
       || ((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && inputs.modules != '')
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # contents, checks and statuses: for workflow_run, the gate reads REVIEW.md's dependencyUpdates from the base
+    # branch and CI at the head.
     permissions:
+      contents: read
       pull-requests: read
+      checks: read
+      statuses: read
+      actions: read
     outputs:
       mode: ${{ steps.gate.outputs.mode }}
       pr: ${{ steps.gate.outputs.pr }}

@@ -13,8 +13,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildAgents } from "./agents.ts";
+import { listReviews } from "./bot-history.ts";
+import { ciAt, ownCheckSuite } from "./ci.ts";
 import { decide, type GateDeps, type PullRequest } from "./gate.ts";
-import { GitHub, GitHubError } from "./github.ts";
+import { fileAt, GitHub, GitHubError } from "./github.ts";
+import { parseReviewConfig } from "./review-config.ts";
 import { prepare } from "./prepare.ts";
 import { modulesCommand, rulesPassPrepareCommand, sendCommand } from "./module-commands.ts";
 import { respond } from "./respond.ts";
@@ -36,6 +39,9 @@ async function gate(s: Settings): Promise<void> {
     },
     pullRequest: (n) => gh.get<PullRequest>(`/repos/${owner}/${repo}/pulls/${n}`),
     reviewComment: (id) => gh.get(`/repos/${owner}/${repo}/pulls/comments/${id}`),
+    reviewConfig: async (ref) => parseReviewConfig(await fileAt(gh, s.repo, "REVIEW.md", ref)),
+    ciState: async (sha) => (await ciAt(gh, s.repo, sha, await ownCheckSuite(gh, s.repo))).state,
+    botReviewed: async (pr, sha) => (await listReviews(gh, s.repo, pr)).some((r) => r.user?.login === s.botLogin && r.commit_id === sha),
   };
   const payload = JSON.parse(readFileSync(requireEnv("GITHUB_EVENT_PATH"), "utf8"));
   const decision = await decide(requireEnv("GITHUB_EVENT_NAME"), payload, s, deps);
@@ -48,7 +54,8 @@ async function gate(s: Settings): Promise<void> {
     head_sha: decision.headSha,
     head_repo: decision.headRepo,
   });
-  console.log(`gate: ${decision.mode} (${decision.reason})`);
+  // Which secret store GitHub gave this run follows from who started it (Dependabot runs get Dependabot secrets).
+  console.log(`gate: ${decision.mode} (${decision.reason}); actor ${process.env.GITHUB_ACTOR ?? "?"}, triggering actor ${process.env.GITHUB_TRIGGERING_ACTOR ?? "?"}`);
   if (decision.mode !== "skip") appendSummary(`Gate: **${decision.mode}** for #${decision.pr}: ${decision.reason}.`);
 }
 

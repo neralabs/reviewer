@@ -16,7 +16,7 @@ Passed under `with:` in the caller.
 | `team_slug` | no | `reviewer` | Slug of the team whose review request starts a review. Commands addressed to `@<owner>/<team_slug>` also count. |
 | `handle` | no | `@neralabs-reviewer` | Comment handle for commands: `@` plus your app's slug. |
 | `bot_login` | no | `neralabs-reviewer[bot]` | Your app's bot login: its slug plus `[bot]`. The gate uses it to recognise the bot's own comments and threads. |
-| `allow_approve` | no | `false` | Let the poster approve PRs that pass the low-risk rules. Off, the bot only comments or requests changes. |
+| `allow_approve` | no | `false` | Let the poster approve PRs that pass the low-risk rules (and dependency PRs that pass their guards). Off, the bot only comments or requests changes. |
 | `max_budget_usd` | no | `"15"` | Spend cap for one review run, passed to Claude Code as `--max-budget-usd`. |
 | `large_pr_lines` | no | `50000` | Changed lines, excluding generated files, above which a review is summary-only unless someone asks for `review full`. `largePrLines` in `REVIEW.md` overrides it. |
 | `modules` | no | `""` | Deterministic checks to run beside the review, space-separated module ids ([modules.md](modules.md)), e.g. `rerail`. With modules, a `schedule` or `workflow_dispatch` trigger in the caller runs them over the whole branch. |
@@ -88,10 +88,50 @@ A fenced block opened with ` ```json reviewer ` holds the machine-readable setti
 | `highRiskPaths` | string list, CODEOWNERS path syntax | `.github/`, `REVIEW.md`, `CODEOWNERS` | A PR touching one of these is never approved. Entries add to the defaults. Issue and PR templates under `.github/` are outside the built-in `.github/` entry; list them (for example `.github/ISSUE_TEMPLATE/`) to make them high-risk. |
 | `generatedPaths` | string list, CODEOWNERS path syntax | common lock files (`package-lock.json`, `npm-shrinkwrap.json`, `yarn.lock`, `pnpm-lock.yaml`, `bun.lock`, `bun.lockb`, `Cargo.lock`, `poetry.lock`, `uv.lock`, `Pipfile.lock`, `Gemfile.lock`, `composer.lock`, `go.sum`), `*.min.js`, `*.min.css` | Files nobody writes by hand: generated code, snapshots, goldens, vendored data. The model sees only a listing and a small sample of them, and they don't count toward `largePrLines`. Entries add to the defaults. |
 | `largePrLines` | positive integer | the caller's `large_pr_lines` | Changed-line threshold for a summary-only review. Overrides the caller input, up or down. |
+| `dependencyUpdates` | object | none | Dependency bot PRs, reviewed when CI finishes and approvable past the high-risk and bot-author rules. See [Dependency PRs](#dependency-prs). |
 
 Unknown keys are an error. If the block doesn't parse, approval is off and the review says why. Without a block, the defaults apply.
 
 Changes to `REVIEW.md` change what blocks a merge, so review them like code. The file is always a high-risk path.
+
+### Dependency PRs
+
+````markdown
+```json reviewer
+{
+  "dependencyUpdates": {
+    "authors": ["dependabot[bot]"],
+    "pushers": ["neralabs-ci[bot]"],
+    "pinFiles": ["scripts/host/install-omp-host.mjs"],
+    "knownGaps": {
+      "pack-data": "Jobs that need an OIDC token (test data, conformance) skip on Dependabot PRs."
+    }
+  }
+}
+```
+````
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `authors` | bot login list, required | | Bots whose PRs are dependency PRs. Only logins ending in `[bot]`. |
+| `pushers` | bot login list | `[]` | Other bots allowed to add commits to those PRs, such as a workflow that brings pinned files along. |
+| `pinFiles` | string list, CODEOWNERS path syntax | `[]` | Files those PRs may change freely besides manifests and lock files. |
+| `knownGaps` | object, id → description | `{}` | CI that doesn't run for these PRs. A `needsRun` follow-up or nit that only restates one of these (the model sets `knownGap` to its id) doesn't withhold approval. Ids are lowercase letters, digits and dashes. |
+
+The guards that decide approval are in [architecture.md](architecture.md#verdict-and-approval-policy), and why they are safe is in [security-model.md](security-model.md#dependency-prs).
+
+To review these PRs without anyone asking, add a `workflow_run` trigger for your CI workflow to the caller:
+
+```yaml
+on:
+  workflow_run:
+    workflows: [CI] # the `name:` of the workflow whose success should start the review
+    types: [completed]
+```
+
+The gate reviews a PR from that trigger only when: the run was a successful `pull_request` run for one same-repository PR; the PR is open, not a draft, and its author is in `authors`; the run's commit is still the PR's head; the bot hasn't reviewed that head; and no other check at the head is pending or failing. If another workflow at the head finishes after CI, no review starts. Request the team to review then.
+
+Dependabot-started runs get only Dependabot secrets. Add the reviewer's secrets to the repository's **Dependabot** secrets too, under the names the caller reads: the app key, and the model key for your provider. Variables, such as `REVIEWER_APP_CLIENT_ID`, aren't restricted.
 
 ## CODEOWNERS
 
