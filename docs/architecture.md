@@ -193,7 +193,7 @@ When a PR isn't approved, the summary says which rules failed. The model's `risk
 
 If the settings block in `REVIEW.md` doesn't parse, approval is off and the summary says why.
 
-Bot approvals count toward required reviews in branch protection and rulesets. So these rules are a security boundary, and changes to them or to anything that feeds them (the poster, the schema, `REVIEW.md` parsing) deserve a second human's review.
+Bot approvals count toward required reviews in branch protection and rulesets when the app has the **Contents** read and write permission ([quickstart](../README.md#quickstart)). So these rules are a security boundary, and changes to them or to anything that feeds them (the poster, the schema, `REVIEW.md` parsing) deserve a second human's review.
 
 ## Escalation
 

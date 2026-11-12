@@ -4,9 +4,9 @@ The reviewer reads code that anyone who can open a pull request controls, and it
 
 ## What is protected
 
-- **Write access to the target repository.** The app token can post reviews and comments, approve, and request reviewers. An approval can satisfy a required-review rule.
+- **Write access to the target repository.** The app token can post reviews and comments, approve, and request reviewers. An approval can satisfy a required-review rule when the app has the **Contents** read and write permission; GitHub doesn't count it otherwise.
 - **The model credential.** A Claude API key or an Amazon Bedrock API key, which spends money.
-- **The app's private key.** It can mint tokens for every repository the app is installed on.
+- **The app's private key.** It can mint tokens for every repository the app is installed on, with any permission the app holds. When the app has **Contents** read and write, that includes a token that can push code.
 - **Other secrets of the calling repository.** The reviewer must not see them.
 
 ## Assumptions
@@ -103,7 +103,7 @@ PR events are accepted only as `pull_request_target` (and `workflow_run`, below)
 
 ## Per-job scoped app tokens
 
-The workflow sets `permissions: {}` at the top and grants each job only what it needs. The gate and review jobs use the read-only `GITHUB_TOKEN`. Jobs that write mint their own short-lived app token, scoped to the calling repository: `pull-requests: write`, `contents: read`, and `members: read` where the job changes team review requests. No token can push code. The model credential reaches only the Claude Code step, and only the chosen provider's key does.
+The workflow sets `permissions: {}` at the top and grants each job only what it needs. The gate and review jobs use the read-only `GITHUB_TOKEN`. Jobs that write mint their own short-lived app token, scoped to the calling repository: `pull-requests: write`, `contents: read`, and `members: read` where the job changes team review requests. No token the workflow mints can push code, even when the app has **Contents** read and write so that its approvals count. The model credential reaches only the Claude Code step, and only the chosen provider's key does.
 
 Give the app no permission beyond those listed in the [quickstart](../README.md#quickstart), and scope the model key to invoking the configured model only. [infra/bedrock.yml](../infra/bedrock.yml) shows this for Bedrock.
 

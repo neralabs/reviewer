@@ -36,7 +36,7 @@ The model reads untrusted PR content, so it never holds a credential that can wr
 These steps set the reviewer up for your organization. Replace `<org>` with your organization and `<app>` with your app's name.
 
 1. **Create a GitHub App** in your organization (Settings → Developer settings → GitHub Apps). Permissions:
-   - Repository: **Pull requests** read and write, **Contents** read, **Metadata** read.
+   - Repository: **Pull requests** read and write, **Contents** read, **Metadata** read. If the bot's approvals should count toward required reviews, give it **Contents** read and write instead: GitHub counts an approval only from an account that can write to the repository. The workflow's tokens ask for read access to contents either way.
    - Organization: **Members** read. GitHub ignores an app's changes to team review requests without it.
    - No webhook: clear "Active" under Webhook.
 
@@ -51,7 +51,7 @@ These steps set the reviewer up for your organization. Replace `<org>` with your
 6. **Add a `REVIEW.md`** at the repository root, from [templates/REVIEW.md](templates/REVIEW.md): what the repo is, what blocks a merge, known gaps, high-risk paths, and the settings block.
 7. **Add a `CODEOWNERS`** file. Escalations go to the owners it names. Without one, the bot mentions the repository admins and reports the missing file.
 
-Start with `allow_approve: false`. The bot then comments and requests changes but never approves. Turn approvals on once its reviews are reliable for the repository. Bot approvals count toward required reviews, so treat the caller, `REVIEW.md` and `CODEOWNERS` as security-relevant files.
+Start with `allow_approve: false`. The bot then comments and requests changes but never approves. Turn approvals on once its reviews are reliable for the repository. When the app has **Contents** read and write, bot approvals count toward required reviews, so treat the caller, `REVIEW.md` and `CODEOWNERS` as security-relevant files. With **Contents** read, the bot still posts approvals, but a person's approval is still required.
 
 ## Commands
 
