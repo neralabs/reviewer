@@ -52,10 +52,15 @@ function failure(err: unknown, what: string): Error {
   return new Error(`${what} failed (exit ${e.status ?? "?"}): ${(e.stderr || e.stdout || e.message).trim().slice(0, 500)}`);
 }
 
-/** `rerail scan … --json`. Exit 0 is a completed scan whatever it found; 1 is a failed scan that may still print its result. */
+/**
+ * `rerail scan … --json`. Exit 0 is a completed scan whatever it found; 1 is a failed scan that may still print its
+ * result. A scan with no session is experimental in Rerail and refused unless `RERAIL_EXPERIMENTAL_HEADLESS_SCAN=1`
+ * (neralabs/rerail#667), so the scan gets that, and no other experiment; a Rerail from before the switch ignores it.
+ */
 export function runScan(cwd: string, args: readonly string[]): ScanResult {
   try {
-    return parseScan(execFileSync(bin(), ["scan", ...args, "--json"], { cwd, encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] }));
+    const env = { ...process.env, RERAIL_EXPERIMENTAL_HEADLESS_SCAN: "1" };
+    return parseScan(execFileSync(bin(), ["scan", ...args, "--json"], { cwd, env, encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] }));
   } catch (err) {
     const e = err as { status?: number; stdout?: string };
     if (e.status === 1 && e.stdout?.trim()) return parseScan(e.stdout);
