@@ -3,7 +3,9 @@
 [Rerail](https://github.com/neralabs/rerail) checks code against a repository's rules: rule documents in
 `.rerail/rules/` and rule packs. The `rerail` module ([modules/rerail/](../modules/rerail/)) runs it as one of the
 reviewer's [modules](modules.md): deterministic, no model, opt-in. Headless `rerail scan` is an internal-testing
-feature of Rerail; its output is the `rerail.scan/1` document described in Rerail's docs.
+feature of Rerail; its output is the `rerail.scan/1` document described in Rerail's docs. From the Rerail release that
+makes it experimental ([neralabs/rerail#667](https://github.com/neralabs/rerail/pull/667)), a scan with no session is
+refused unless `RERAIL_EXPERIMENTAL_HEADLESS_SCAN=1`, so the module sets that variable for its scans, and no other.
 
 ## Turning it on
 

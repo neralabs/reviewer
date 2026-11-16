@@ -73,7 +73,7 @@ test("a repository pack path resolves only inside the base checkout", () => {
 const FAKE_RERAIL = `
 const fs = require("node:fs");
 const args = process.argv.slice(2);
-fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ cwd: process.cwd(), args }) + "\\n");
+fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ cwd: process.cwd(), args, headless: process.env.RERAIL_EXPERIMENTAL_HEADLESS_SCAN ?? null }) + "\\n");
 if (args[0] !== "scan") process.exit(0);
 const head = JSON.parse(fs.readFileSync(${JSON.stringify(FIXTURE)}, "utf8"));
 const scope = args[args.indexOf("--scope") + 1];
@@ -136,7 +136,7 @@ function withFake<T>(bin: string, log: string, fn: () => T): T {
   }
 }
 
-const calls = (log: string) => readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l) as { cwd: string; args: string[] });
+const calls = (log: string) => readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l) as { cwd: string; args: string[]; headless: string | null });
 
 test("diff mode: approval only from the base checkout, the PR scanned with the base's rules, the merge base for the same files", () => {
   const { root, env, bin, log } = workspace();
@@ -154,6 +154,8 @@ test("diff mode: approval only from the base checkout, the PR scanned with the b
       ],
     );
     const [head, mergeBase] = all.filter((c) => c.args[0] === "scan");
+    // A scan with no session needs Rerail's headless-scan experiment; nothing else runs with it.
+    assert.deepEqual(all.map((c) => [c.args[0], c.headless]), [["packs", null], ["rules", null], ["rules", null], ["scan", "1"], ["scan", "1"]]);
     assert.deepEqual(head!.args, ["scan", "--scope", "git-diff", "--base", env.mergeBase, "--rules-ref", env.baseSha, "--pack", "typescript", "--pack", "team", "--json"]);
     assert.equal(realpathSync(head!.cwd), realpathSync(env.checkout));
     assert.deepEqual(mergeBase!.args.slice(0, 4), ["scan", "--scope", "repository", "--paths-from"]);
