@@ -1,0 +1,104 @@
+{
+  "format": "rerail.policy/v1",
+  "id": "reviewer-github-through-client",
+  "revision": 1,
+  "mode": "steer",
+  "description": "Talk to GitHub only through the GitHub class in github.ts; no raw request, gh CLI call or hard-coded API address elsewhere.",
+  "scope": {
+    "include": [
+      "poster/src/**/*.ts",
+      "poster/src/**/*.mts",
+      "poster/src/**/*.cts",
+      "modules/**/*.ts",
+      "modules/**/*.mts",
+      "modules/**/*.cts",
+      "scripts/**/*.sh",
+      "scripts/**/*.mjs",
+      "modules/**/*.sh",
+      ".github/workflows/*.yml",
+      ".github/workflows/*.yaml"
+    ],
+    "exclude": [
+      "poster/src/github.ts",
+      "poster/src/commands.ts",
+      "poster/src/patterns.ts",
+      "poster/src/text.ts",
+      "poster/src/diff.ts",
+      "poster/src/dependency.ts",
+      "poster/src/policy.ts",
+      "poster/src/render.ts",
+      "poster/src/review-config.ts",
+      "poster/src/gate.ts",
+      "**/node_modules/**"
+    ]
+  },
+  "clauses": [
+    {
+      "id": "fetch-call",
+      "forbid": {
+        "ast": {
+          "language": "typescript",
+          "rule": {
+            "kind": "call_expression",
+            "has": {
+              "field": "function",
+              "kind": "identifier",
+              "regex": "^fetch$"
+            }
+          },
+          "file": {
+            "path": {
+              "notRegex": "^poster/src/sink\\.ts$"
+            }
+          }
+        }
+      },
+      "violation": {
+        "code": "FETCH_OUTSIDE_CLIENT",
+        "anchor": "witness.span",
+        "message": "Call GitHub through the GitHub class in github.ts (get, request, paginate, graphql); results-sink traffic goes through sendBatch in sink.ts."
+      }
+    },
+    {
+      "id": "gh-cli-in-code",
+      "forbid": {
+        "ast": {
+          "language": "typescript",
+          "rule": {
+            "kind": "string",
+            "regex": "^[\"']gh[\"']$",
+            "inside": {
+              "kind": "arguments",
+              "inside": {
+                "kind": "call_expression",
+                "has": {
+                  "field": "function",
+                  "regex": "(?:^|\\.)(?:execFileSync|execFile|spawnSync|spawn|exec|execSync)$"
+                }
+              }
+            }
+          }
+        }
+      },
+      "violation": {
+        "code": "GH_CLI",
+        "anchor": "witness.span",
+        "message": "Use the GitHub class in github.ts instead of the gh CLI."
+      }
+    },
+    {
+      "id": "gh-cli-or-api-url",
+      "forbid": {
+        "regex": {
+          "source": "file.content",
+          "pattern": "(?m)(?:^(?:[ \\t]*-)?[ \\t]*(?:run[ \\t]*:[ \\t]*\\|?[ \\t]*)?(?:[^#\\n]*?(?:\\$\\(|`|&&|\\|\\||;|\\||\\bthen\\b|\\bdo\\b|\\bexec\\b)[ \\t]*)?|https?://)(?P<CALL>gh[ \\t]+(?:api|pr|issue|repo|release|run|workflow|secret|variable|label|search)\\b|api\\.github\\.com\\b)"
+        }
+      },
+      "violation": {
+        "code": "GH_CLI",
+        "anchor": "capture.CALL",
+        "message": "Leave GitHub calls to the poster's GitHub class (poster/src/github.ts); scripts, modules and workflow steps don't call the API."
+      }
+    }
+  ]
+}

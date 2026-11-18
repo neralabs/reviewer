@@ -1,0 +1,30 @@
+{
+  "caught": [
+    {
+      "path": "templates/caller.yml",
+      "content": "name: reviewer\non:\n  pull_request:\n    types: [opened, synchronize]\njobs:\n  reviewer:\n    uses: neralabs/reviewer/.github/workflows/review.yml@v1.2.0\n"
+    },
+    {
+      "path": "docs/configuration.md",
+      "content": "# Configuration\n\n```yaml\non: [pull_request, issue_comment]\n```\n"
+    },
+    {
+      "path": "templates/caller.yml",
+      "content": "jobs:\n  reviewer:\n    uses: neralabs/reviewer/.github/workflows/review.yml@v1.2.0\n    secrets: inherit\n"
+    }
+  ],
+  "passed": [
+    {
+      "path": "templates/caller.yml",
+      "content": "on:\n  # pull_request_target, not pull_request:\n  pull_request_target:\n    types: [review_requested]\n  pull_request_review_comment:\n    types: [created]\njobs:\n  reviewer:\n    # Name each secret instead of `secrets: inherit`.\n    secrets:\n      REVIEWER_APP_PRIVATE_KEY: ${{ secrets.REVIEWER_APP_PRIVATE_KEY }}\n"
+    },
+    {
+      "path": "docs/security-model.md",
+      "content": "## pull_request_target only\n\nOn `pull_request`, GitHub runs the PR's own copy of the caller. `secrets: inherit` would hand the reviewer every secret.\n"
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "content": "on:\n  pull_request:\n  push:\n    branches: [main]\n"
+    }
+  ]
+}

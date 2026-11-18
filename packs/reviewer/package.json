@@ -1,0 +1,25 @@
+{
+  "name": "@neralabs/rerail-pack-reviewer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Rerail rule pack: steers work in the neralabs/reviewer repository toward its own architecture.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/neralabs/reviewer.git",
+    "directory": "packs/reviewer"
+  },
+  "files": [
+    "pack.json",
+    "rules",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "@neralabs/rerail": ">=0.1.5-0"
+  },
+  "peerDependenciesMeta": {
+    "@neralabs/rerail": {
+      "optional": true
+    }
+  }
+}

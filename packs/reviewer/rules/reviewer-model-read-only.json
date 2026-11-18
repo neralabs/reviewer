@@ -1,0 +1,60 @@
+{
+  "format": "rerail.policy/v1",
+  "id": "reviewer-model-read-only",
+  "revision": 1,
+  "mode": "steer",
+  "description": "Give the review model and its subagents read-only file tools only, never a shell, edits, the web or a permission bypass; they read untrusted pull request content.",
+  "scope": {
+    "include": [
+      "scripts/**/*.sh",
+      ".github/workflows/*.yml",
+      ".github/workflows/*.yaml",
+      "poster/src/agents.ts"
+    ],
+    "exclude": []
+  },
+  "clauses": [
+    {
+      "id": "grant-tool",
+      "forbid": {
+        "regex": {
+          "source": "file.content",
+          "pattern": "(?m)^[^#\\n]*?(?:--allowedTools|--allowed-tools|\\ballowed_tools|\\bALLOWED_TOOLS)\\b[^#\\n]*?\\b(?P<TOOL>Bash|BashOutput|KillShell|Edit|MultiEdit|Write|NotebookEdit|WebFetch|WebSearch|mcp__[A-Za-z0-9_]*)\\b"
+        }
+      },
+      "violation": {
+        "code": "MODEL_TOOL_GRANTED",
+        "anchor": "capture.TOOL",
+        "message": "Leave $TOOL out of the model's allowed tools: it reads pull request content and gets Read, Grep, Glob and Agent at most; say needsRun instead."
+      }
+    },
+    {
+      "id": "subagent-tool",
+      "forbid": {
+        "regex": {
+          "source": "file.content",
+          "pattern": "SUBAGENT_TOOLS\\s*(?::[^=]*)?=\\s*\\[[^\\]]*[\"'`](?P<TOOL>Bash|BashOutput|KillShell|Edit|MultiEdit|Write|NotebookEdit|WebFetch|WebSearch|mcp__[A-Za-z0-9_]*)[\"'`]"
+        }
+      },
+      "violation": {
+        "code": "SUBAGENT_TOOL_GRANTED",
+        "anchor": "capture.TOOL",
+        "message": "Keep subagents to Read, Grep and Glob; take $TOOL out of SUBAGENT_TOOLS."
+      }
+    },
+    {
+      "id": "permission-bypass",
+      "forbid": {
+        "regex": {
+          "source": "file.content",
+          "pattern": "(?m)^[^#\\n]*?(?P<FLAG>--(?:allow-)?dangerously-skip-permissions\\b|--permission-mode[ \\t=]+[\"']?(?:bypassPermissions|acceptEdits|default|plan|auto)\\b)"
+        }
+      },
+      "violation": {
+        "code": "MODEL_PERMISSION_BYPASS",
+        "anchor": "capture.FLAG",
+        "message": "Keep --permission-mode dontAsk with no prompts: anything not pre-approved must be denied, not allowed."
+      }
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "caught": [
+    {
+      "path": "scripts/run-claude.sh",
+      "content": "#!/usr/bin/env bash\nallowed_tools=\"${ALLOWED_TOOLS:-Read,Grep,Glob,Agent,Bash}\"\n"
+    },
+    {
+      "path": ".github/workflows/review.yml",
+      "content": "jobs:\n  rules-pass:\n    steps:\n      - env:\n          ALLOWED_TOOLS: Read,WebFetch\n        run: bash ../../reviewer/scripts/run-claude.sh\n"
+    },
+    {
+      "path": "scripts/run-claude.sh",
+      "content": "#!/usr/bin/env bash\nclaude -p \"$(cat \"$prompt_file\")\" \\\n  --restricted \\\n  --permission-mode bypassPermissions \\\n  --allowedTools \"$allowed_tools\"\n"
+    },
+    {
+      "path": "scripts/run-claude.sh",
+      "content": "#!/usr/bin/env bash\nclaude -p \"$prompt\" --dangerously-skip-permissions\n"
+    },
+    {
+      "path": "poster/src/agents.ts",
+      "content": "export const SUBAGENT_TOOLS = [\"Read\", \"Grep\", \"Glob\", \"Edit\"];\n"
+    }
+  ],
+  "passed": [
+    {
+      "path": "scripts/run-claude.sh",
+      "content": "#!/usr/bin/env bash\n# ALLOWED_TOOLS (Read only); never Bash, Edit or Write\nallowed_tools=\"${ALLOWED_TOOLS:-Read,Grep,Glob,Agent}\"\nclaude -p \"$p\" \\\n  --restricted \\\n  --permission-mode dontAsk \\\n  --allowedTools \"$allowed_tools\" \\\n  --disallowedTools \"Edit,Write,NotebookEdit,WebFetch,WebSearch,ScheduleWakeup\"\n"
+    },
+    {
+      "path": ".github/workflows/review.yml",
+      "content": "jobs:\n  rules-pass:\n    steps:\n      - env:\n          ALLOWED_TOOLS: Read\n          AGENTS_FILE: \"\"\n        run: bash ../../reviewer/scripts/run-claude.sh\n"
+    },
+    {
+      "path": "poster/src/agents.ts",
+      "content": "export const SUBAGENT_TOOLS = [\"Read\", \"Grep\", \"Glob\"];\nconst PREAMBLE = \"There is no shell: no Bash, no Edit, no Write.\";\n"
+    }
+  ]
+}

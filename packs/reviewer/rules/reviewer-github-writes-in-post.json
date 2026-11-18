@@ -1,0 +1,115 @@
+{
+  "format": "rerail.policy/v1",
+  "id": "reviewer-github-writes-in-post",
+  "revision": 1,
+  "mode": "steer",
+  "description": "Write to GitHub only from post.ts and respond.ts, the commands that hold the app token; every other module reads with the read-only token.",
+  "scope": {
+    "include": [
+      "poster/src/**/*.ts",
+      "poster/src/**/*.mts",
+      "poster/src/**/*.cts"
+    ],
+    "exclude": [
+      "poster/src/github.ts",
+      "poster/src/post.ts",
+      "poster/src/respond.ts"
+    ]
+  },
+  "clauses": [
+    {
+      "id": "write-request",
+      "forbid": {
+        "ast": {
+          "language": "typescript",
+          "rule": {
+            "kind": "call_expression",
+            "all": [
+              {
+                "has": {
+                  "field": "function",
+                  "kind": "member_expression",
+                  "has": {
+                    "field": "property",
+                    "regex": "^(?:request|send)$"
+                  }
+                }
+              },
+              {
+                "has": {
+                  "field": "arguments",
+                  "has": {
+                    "kind": "string",
+                    "nthChild": 1,
+                    "regex": "^[\"'](?:POST|PUT|PATCH|DELETE)[\"']$"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "violation": {
+        "code": "GITHUB_WRITE_OUTSIDE_POST",
+        "anchor": "witness.span",
+        "message": "Move this write into post.ts or respond.ts, which take the app token; this code runs where only the read-only GITHUB_TOKEN may be."
+      }
+    },
+    {
+      "id": "graphql-mutation",
+      "forbid": {
+        "ast": {
+          "language": "typescript",
+          "rule": {
+            "any": [
+              {
+                "kind": "string"
+              },
+              {
+                "kind": "template_string"
+              }
+            ],
+            "regex": "^[\"'`]\\s*mutation\\s*(?:[A-Za-z_]\\w*\\s*)?[({]"
+          }
+        }
+      },
+      "violation": {
+        "code": "GITHUB_MUTATION_OUTSIDE_POST",
+        "anchor": "witness.span",
+        "message": "Run GraphQL mutations from post.ts or respond.ts with the app token; elsewhere send only queries."
+      }
+    },
+    {
+      "id": "app-token",
+      "forbid": {
+        "ast": {
+          "language": "typescript",
+          "rule": {
+            "any": [
+              {
+                "any": [
+                  {
+                    "kind": "string"
+                  },
+                  {
+                    "kind": "template_string"
+                  }
+                ],
+                "regex": "^[\"'`]APP_TOKEN[\"'`]$"
+              },
+              {
+                "kind": "property_identifier",
+                "regex": "^APP_TOKEN$"
+              }
+            ]
+          }
+        }
+      },
+      "violation": {
+        "code": "APP_TOKEN_OUTSIDE_POST",
+        "anchor": "witness.span",
+        "message": "Read APP_TOKEN only in post.ts or respond.ts; other commands get the read-only GITHUB_TOKEN."
+      }
+    }
+  ]
+}

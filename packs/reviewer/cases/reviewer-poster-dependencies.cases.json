@@ -1,0 +1,46 @@
+{
+  "caught": [
+    {
+      "path": "poster/src/patterns.ts",
+      "content": "import { minimatch } from \"minimatch\";\n"
+    },
+    {
+      "path": "poster/src/github.ts",
+      "content": "import { Octokit } from \"@octokit/rest\";\n"
+    },
+    {
+      "path": "poster/src/rules-pass.ts",
+      "content": "import { Ajv } from \"ajv\";\n"
+    },
+    {
+      "path": "poster/src/cli.ts",
+      "content": "import { post } from \"./post.ts\";\n"
+    },
+    {
+      "path": "poster/src/respond.ts",
+      "content": "import { loadFindings } from \"./findings.ts\";\n"
+    }
+  ],
+  "passed": [
+    {
+      "path": "poster/src/findings.ts",
+      "content": "import { readFileSync } from \"node:fs\";\nimport { Ajv } from \"ajv\";\nimport { commentableLines } from \"./diff.ts\";\n"
+    },
+    {
+      "path": "poster/src/cli.ts",
+      "content": "const { post } = await import(\"./post.ts\");\nimport { join } from \"node:path\";\n"
+    },
+    {
+      "path": "poster/src/post.ts",
+      "content": "import { checkPath, loadFindings } from \"./findings.ts\";\n"
+    },
+    {
+      "path": "poster/src/render.ts",
+      "content": "import type { ModelOutput } from \"./findings.ts\";\nimport { codeSpan } from \"./text.ts\";\n"
+    },
+    {
+      "path": "poster/src/text.ts",
+      "content": "export const ajvNote = \"ajv\";\nexport const nodeNote = \"node:fs\";\n"
+    }
+  ]
+}

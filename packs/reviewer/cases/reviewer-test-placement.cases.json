@@ -1,0 +1,34 @@
+{
+  "caught": [
+    {
+      "path": "poster/src/policy.test.ts",
+      "content": "import { test } from \"node:test\";\n"
+    },
+    {
+      "path": "poster/test/unit/render.test.ts",
+      "content": "import { test } from \"node:test\";\n"
+    },
+    {
+      "path": "modules/rerail/run.test.ts",
+      "content": "import { test } from \"node:test\";\n"
+    },
+    {
+      "path": "modules/rerail/test/scan.spec.ts",
+      "content": "import { test } from \"node:test\";\n"
+    }
+  ],
+  "passed": [
+    {
+      "path": "poster/test/policy.test.ts",
+      "content": "import { test } from \"node:test\";\n"
+    },
+    {
+      "path": "modules/rerail/test/run.test.ts",
+      "content": "import { test } from \"node:test\";\n"
+    },
+    {
+      "path": "poster/test/fixtures/modules/todo/run.sh",
+      "content": "#!/usr/bin/env bash\nset -euo pipefail\n"
+    }
+  ]
+}

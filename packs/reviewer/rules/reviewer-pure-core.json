@@ -1,0 +1,112 @@
+{
+  "format": "rerail.policy/v1",
+  "id": "reviewer-pure-core",
+  "revision": 1,
+  "mode": "steer",
+  "description": "Keep the poster's decision modules pure, with no file, process, network or environment access; the commands do the I/O and pass the data in.",
+  "scope": {
+    "include": [
+      "poster/src/commands.ts",
+      "poster/src/patterns.ts",
+      "poster/src/text.ts",
+      "poster/src/diff.ts",
+      "poster/src/dependency.ts",
+      "poster/src/policy.ts",
+      "poster/src/render.ts",
+      "poster/src/review-config.ts",
+      "poster/src/gate.ts"
+    ],
+    "exclude": []
+  },
+  "clauses": [
+    {
+      "id": "io-import",
+      "forbid": {
+        "ast": {
+          "language": "typescript",
+          "rule": {
+            "any": [
+              {
+                "kind": "string"
+              },
+              {
+                "kind": "template_string"
+              }
+            ],
+            "regex": "^[\"'`](?:(?:node:)?(?:fs|fs/promises|child_process|net|http|https|http2|dns|dns/promises|os|tls|dgram|worker_threads|readline|readline/promises|cluster|process|vm|inspector)|\\./(?:github|settings|bot-history|ci|modules|sink|agents|prepare|post|respond|module-commands|cli|findings|rules-pass)\\.ts)[\"'`]$",
+            "inside": {
+              "any": [
+                {
+                  "kind": "import_statement"
+                },
+                {
+                  "kind": "export_statement"
+                },
+                {
+                  "kind": "arguments",
+                  "inside": {
+                    "kind": "call_expression",
+                    "has": {
+                      "field": "function",
+                      "kind": "import"
+                    }
+                  }
+                }
+              ]
+            },
+            "not": {
+              "any": [
+                {
+                  "inside": {
+                    "kind": "import_statement",
+                    "regex": "^import\\s+(?:type\\b|\\{(?:\\s*type\\s+[\\w$]+(?:\\s+as\\s+[\\w$]+)?\\s*,?)+\\s*\\}\\s*from\\b)"
+                  }
+                },
+                {
+                  "inside": {
+                    "kind": "export_statement",
+                    "regex": "^export\\s+type\\b"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "violation": {
+        "code": "PURE_MODULE_IO_IMPORT",
+        "anchor": "witness.span",
+        "message": "Take what this needs as an argument, as gate.ts takes GateDeps, and import it in the command that calls this; a type-only import is fine."
+      }
+    },
+    {
+      "id": "io-global",
+      "forbid": {
+        "ast": {
+          "language": "typescript",
+          "rule": {
+            "any": [
+              {
+                "kind": "identifier",
+                "regex": "^process$"
+              },
+              {
+                "kind": "call_expression",
+                "has": {
+                  "field": "function",
+                  "kind": "identifier",
+                  "regex": "^fetch$"
+                }
+              }
+            ]
+          }
+        }
+      },
+      "violation": {
+        "code": "PURE_MODULE_IO",
+        "anchor": "witness.span",
+        "message": "Read environment, process state or the network in the command (settings.ts, the GitHub class) and pass the value in."
+      }
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "caught": [
+    {
+      "path": "poster/src/modules.ts",
+      "content": "import { parseScan } from \"../../modules/rerail/run.ts\";\n"
+    },
+    {
+      "path": "poster/src/post.ts",
+      "content": "const rerail = await import(\"../../modules/rerail/run.ts\");\n"
+    },
+    {
+      "path": "modules/rerail/run.ts",
+      "content": "import { redactSecrets } from \"../../poster/src/text.ts\";\n"
+    },
+    {
+      "path": "modules/lint/run.ts",
+      "content": "import { parse } from \"yaml\";\n"
+    },
+    {
+      "path": "modules/lint/run.ts",
+      "content": "import { minimatch } from \"@isaacs/minimatch\";\n"
+    }
+  ],
+  "passed": [
+    {
+      "path": "modules/rerail/run.ts",
+      "content": "import { execFileSync } from \"node:child_process\";\nimport { join } from \"node:path\";\n"
+    },
+    {
+      "path": "modules/rerail/test/run.test.ts",
+      "content": "import { test } from \"node:test\";\nimport { parseScan } from \"../run.ts\";\n"
+    },
+    {
+      "path": "poster/test/modules.test.ts",
+      "content": "const rerail = await import(\"../../modules/rerail/run.ts\");\n"
+    },
+    {
+      "path": "poster/src/modules.ts",
+      "content": "const script = resolve(home, \"modules\", id, \"run.sh\");\nimport { readFileSync } from \"node:fs\";\n"
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "caught": [
+    {
+      "path": "poster/src/policy.ts",
+      "content": "import { readFileSync } from \"node:fs\";\nexport const rules = JSON.parse(readFileSync(\"rules.json\", \"utf8\"));\n"
+    },
+    {
+      "path": "poster/src/gate.ts",
+      "content": "import { GitHub } from \"./github.ts\";\nexport const gh = new GitHub(\"\");\n"
+    },
+    {
+      "path": "poster/src/render.ts",
+      "content": "export function footer(): string {\n  return `run ${process.env.GITHUB_RUN_ID}`;\n}\n"
+    },
+    {
+      "path": "poster/src/review-config.ts",
+      "content": "export async function load(url: string): Promise<string> {\n  return (await fetch(url)).text();\n}\n"
+    },
+    {
+      "path": "poster/src/diff.ts",
+      "content": "const { execFileSync } = await import(\"node:child_process\");\n"
+    }
+  ],
+  "passed": [
+    {
+      "path": "poster/src/gate.ts",
+      "content": "import type { CiState } from \"./ci.ts\";\nimport { parseCommand, type Command } from \"./commands.ts\";\nexport interface GateDeps { permission(user: string): Promise<string>; }\n"
+    },
+    {
+      "path": "poster/src/policy.ts",
+      "content": "import { type CiState } from \"./ci.ts\";\nimport { isHighRisk, type ReviewConfig } from \"./review-config.ts\";\nexport function green(ci: CiState): boolean { return ci.state === \"pass\"; }\n"
+    },
+    {
+      "path": "poster/src/text.ts",
+      "content": "// process.env is read in settings.ts, never here.\nexport const env = \"process\";\nexport function fetchable(deps: { fetch(url: string): Promise<string> }): Promise<string> { return deps.fetch(\"x\"); }\n"
+    },
+    {
+      "path": "poster/src/settings.ts",
+      "content": "import { appendFileSync } from \"node:fs\";\nconst file = process.env.GITHUB_OUTPUT;\n"
+    }
+  ]
+}
