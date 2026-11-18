@@ -1,0 +1,89 @@
+{
+  "format": "rerail.policy/v1",
+  "id": "reviewer-subprocess-owners",
+  "revision": 1,
+  "mode": "steer",
+  "description": "Start programs from the poster only in prepare.ts and modules.ts, where git and module scripts run with their hardened arguments and environment.",
+  "scope": {
+    "include": [
+      "poster/src/**/*.ts",
+      "poster/src/**/*.mts",
+      "poster/src/**/*.cts"
+    ],
+    "exclude": [
+      "poster/src/prepare.ts",
+      "poster/src/modules.ts",
+      "poster/src/commands.ts",
+      "poster/src/patterns.ts",
+      "poster/src/text.ts",
+      "poster/src/diff.ts",
+      "poster/src/dependency.ts",
+      "poster/src/policy.ts",
+      "poster/src/render.ts",
+      "poster/src/review-config.ts",
+      "poster/src/gate.ts"
+    ]
+  },
+  "clauses": [
+    {
+      "id": "child-process",
+      "forbid": {
+        "ast": {
+          "language": "typescript",
+          "rule": {
+            "any": [
+              {
+                "kind": "string"
+              },
+              {
+                "kind": "template_string"
+              }
+            ],
+            "regex": "^[\"'`](?:node:)?child_process(?:/promises)?[\"'`]$",
+            "inside": {
+              "any": [
+                {
+                  "kind": "import_statement"
+                },
+                {
+                  "kind": "export_statement"
+                },
+                {
+                  "kind": "arguments",
+                  "inside": {
+                    "kind": "call_expression",
+                    "has": {
+                      "field": "function",
+                      "kind": "import"
+                    }
+                  }
+                }
+              ]
+            },
+            "not": {
+              "any": [
+                {
+                  "inside": {
+                    "kind": "import_statement",
+                    "regex": "^import\\s+(?:type\\b|\\{(?:\\s*type\\s+[\\w$]+(?:\\s+as\\s+[\\w$]+)?\\s*,?)+\\s*\\}\\s*from\\b)"
+                  }
+                },
+                {
+                  "inside": {
+                    "kind": "export_statement",
+                    "regex": "^export\\s+type\\b"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "violation": {
+        "code": "SUBPROCESS_OUTSIDE_OWNER",
+        "anchor": "witness.span",
+        "message": "Run git through the helper in prepare.ts or modules.ts, and module scripts through runModules; add what you need there rather than starting programs here."
+      }
+    }
+  ]
+}

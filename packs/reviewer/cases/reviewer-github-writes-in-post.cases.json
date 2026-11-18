@@ -1,0 +1,46 @@
+{
+  "caught": [
+    {
+      "path": "poster/src/prepare.ts",
+      "content": "export async function note(gh: GitHub, repo: RepoRef, pr: number): Promise<void> {\n  await gh.request(\"POST\", `/repos/${repo.owner}/${repo.repo}/issues/${pr}/comments`, { body: \"preparing\" });\n}\n"
+    },
+    {
+      "path": "poster/src/bot-history.ts",
+      "content": "export async function clearTeam(gh: GitHub, path: string): Promise<void> {\n  await gh.request<unknown>(\"DELETE\", `${path}/requested_reviewers`, { team_reviewers: [\"reviewer\"] });\n}\n"
+    },
+    {
+      "path": "poster/src/bot-history.ts",
+      "content": "export async function resolve(gh: GitHub, thread: string): Promise<void> {\n  await gh.graphql(`mutation($thread: ID!) { resolveReviewThread(input: { threadId: $thread }) { clientMutationId } }`, { thread });\n}\n"
+    },
+    {
+      "path": "poster/src/module-commands.ts",
+      "content": "const write = new GitHub(requireEnv(\"APP_TOKEN\"));\n"
+    },
+    {
+      "path": "poster/src/prepare.ts",
+      "content": "const token = process.env.APP_TOKEN ?? \"\";\n"
+    }
+  ],
+  "passed": [
+    {
+      "path": "poster/src/post.ts",
+      "content": "const write = new GitHub(requireEnv(\"APP_TOKEN\"));\nawait write.request(\"POST\", reviewsPath, { event: \"COMMENT\", body });\n"
+    },
+    {
+      "path": "poster/src/respond.ts",
+      "content": "await gh.request(\"PUT\", `/repos/${repo.owner}/${repo.repo}/pulls/${pr}/reviews/${id}/dismissals`, { message, event: \"DISMISS\" });\n"
+    },
+    {
+      "path": "poster/src/prepare.ts",
+      "content": "const pr = await gh.request<PullRequest>(\"GET\", `/repos/${repo.owner}/${repo.repo}/pulls/${n}`);\nconst read = new GitHub(requireEnv(\"GITHUB_TOKEN\"));\n"
+    },
+    {
+      "path": "poster/src/bot-history.ts",
+      "content": "const THREADS_QUERY = `query($owner: String!) { repository(owner: $owner) { name } }`;\n// A mutation runs only in post.ts.\nconst label = \"mutation\";\n"
+    },
+    {
+      "path": "poster/src/github.ts",
+      "content": "async graphql<T>(query: string, variables: Record<string, unknown>): Promise<T> {\n  return this.request<T>(\"POST\", \"/graphql\", { query, variables });\n}\n"
+    }
+  ]
+}

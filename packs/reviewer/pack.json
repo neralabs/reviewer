@@ -1,0 +1,164 @@
+{
+  "format": "rerail.rule-pack/v1",
+  "id": "reviewer",
+  "name": "Reviewer repository",
+  "category": "repository",
+  "covers": "Steers work in neralabs/reviewer toward its architecture: who may write to GitHub, what the model may do, pure decision modules, and modules kept apart from the core.",
+  "reason": "holds the reviewer rule pack",
+  "match": {
+    "any": [
+      {
+        "files": [
+          "packs/reviewer/pack.json"
+        ],
+        "label": "packs/reviewer/pack.json"
+      }
+    ]
+  },
+  "rules": [
+    {
+      "id": "reviewer-github-writes-in-post",
+      "document": "rules/reviewer-github-writes-in-post.json",
+      "title": "Write to GitHub only from post and respond",
+      "group": "GitHub and credentials",
+      "examples": {
+        "caught": {
+          "path": "poster/src/prepare.ts",
+          "text": "export async function note(gh: GitHub, repo: RepoRef, pr: number): Promise<void> {\n  await gh.request(\"POST\", `/repos/${repo.owner}/${repo.repo}/issues/${pr}/comments`, { body: \"preparing\" });\n}\n"
+        },
+        "passes": {
+          "path": "poster/src/post.ts",
+          "text": "const write = new GitHub(requireEnv(\"APP_TOKEN\"));\nawait write.request(\"POST\", reviewsPath, { event: \"COMMENT\", body });\n"
+        }
+      }
+    },
+    {
+      "id": "reviewer-github-through-client",
+      "document": "rules/reviewer-github-through-client.json",
+      "title": "Reach GitHub only through the GitHub class",
+      "group": "GitHub and credentials",
+      "examples": {
+        "caught": {
+          "path": "poster/src/prepare.ts",
+          "text": "const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${n}`, { headers });\n"
+        },
+        "passes": {
+          "path": "poster/src/github.ts",
+          "text": "const res = await fetch(url, { method, headers: { authorization: `Bearer ${this.token}` } });\n"
+        }
+      }
+    },
+    {
+      "id": "reviewer-model-read-only",
+      "document": "rules/reviewer-model-read-only.json",
+      "title": "Give the review model read-only tools only",
+      "group": "Untrusted input",
+      "examples": {
+        "caught": {
+          "path": "scripts/run-claude.sh",
+          "text": "#!/usr/bin/env bash\nallowed_tools=\"${ALLOWED_TOOLS:-Read,Grep,Glob,Agent,Bash}\"\n"
+        },
+        "passes": {
+          "path": "scripts/run-claude.sh",
+          "text": "#!/usr/bin/env bash\n# ALLOWED_TOOLS (Read only); never Bash, Edit or Write\nallowed_tools=\"${ALLOWED_TOOLS:-Read,Grep,Glob,Agent}\"\nclaude -p \"$p\" \\\n  --restricted \\\n  --permission-mode dontAsk \\\n  --allowedTools \"$allowed_tools\" \\\n  --disallowedTools \"Edit,Write,NotebookEdit,WebFetch,WebSearch,ScheduleWakeup\"\n"
+        }
+      }
+    },
+    {
+      "id": "reviewer-caller-pull-request-target",
+      "document": "rules/reviewer-caller-pull-request-target.json",
+      "title": "Show callers pull_request_target and named secrets only",
+      "group": "Untrusted input",
+      "examples": {
+        "caught": {
+          "path": "templates/caller.yml",
+          "text": "name: reviewer\non:\n  pull_request:\n    types: [opened, synchronize]\njobs:\n  reviewer:\n    uses: neralabs/reviewer/.github/workflows/review.yml@v1.2.0\n"
+        },
+        "passes": {
+          "path": "templates/caller.yml",
+          "text": "on:\n  # pull_request_target, not pull_request:\n  pull_request_target:\n    types: [review_requested]\n  pull_request_review_comment:\n    types: [created]\njobs:\n  reviewer:\n    # Name each secret instead of `secrets: inherit`.\n    secrets:\n      REVIEWER_APP_PRIVATE_KEY: ${{ secrets.REVIEWER_APP_PRIVATE_KEY }}\n"
+        }
+      }
+    },
+    {
+      "id": "reviewer-pure-core",
+      "document": "rules/reviewer-pure-core.json",
+      "title": "Keep the poster's decision modules pure",
+      "group": "Layering",
+      "examples": {
+        "caught": {
+          "path": "poster/src/policy.ts",
+          "text": "import { readFileSync } from \"node:fs\";\nexport const rules = JSON.parse(readFileSync(\"rules.json\", \"utf8\"));\n"
+        },
+        "passes": {
+          "path": "poster/src/gate.ts",
+          "text": "import type { CiState } from \"./ci.ts\";\nimport { parseCommand, type Command } from \"./commands.ts\";\nexport interface GateDeps { permission(user: string): Promise<string>; }\n"
+        }
+      }
+    },
+    {
+      "id": "reviewer-subprocess-owners",
+      "document": "rules/reviewer-subprocess-owners.json",
+      "title": "Start programs only from prepare and the module runner",
+      "group": "Layering",
+      "examples": {
+        "caught": {
+          "path": "poster/src/post.ts",
+          "text": "import { execFileSync } from \"node:child_process\";\nconst sha = execFileSync(\"git\", [\"rev-parse\", \"HEAD\"], { encoding: \"utf8\" });\n"
+        },
+        "passes": {
+          "path": "poster/src/prepare.ts",
+          "text": "import { execFileSync } from \"node:child_process\";\n"
+        }
+      }
+    },
+    {
+      "id": "reviewer-module-boundary",
+      "document": "rules/reviewer-module-boundary.json",
+      "title": "Keep the poster and modules apart",
+      "group": "Layering",
+      "examples": {
+        "caught": {
+          "path": "poster/src/modules.ts",
+          "text": "import { parseScan } from \"../../modules/rerail/run.ts\";\n"
+        },
+        "passes": {
+          "path": "modules/rerail/run.ts",
+          "text": "import { execFileSync } from \"node:child_process\";\nimport { join } from \"node:path\";\n"
+        }
+      }
+    },
+    {
+      "id": "reviewer-poster-dependencies",
+      "document": "rules/reviewer-poster-dependencies.json",
+      "title": "Keep the poster on Node built-ins plus ajv, loaded only by post",
+      "group": "Layering",
+      "examples": {
+        "caught": {
+          "path": "poster/src/patterns.ts",
+          "text": "import { minimatch } from \"minimatch\";\n"
+        },
+        "passes": {
+          "path": "poster/src/findings.ts",
+          "text": "import { readFileSync } from \"node:fs\";\nimport { Ajv } from \"ajv\";\nimport { commentableLines } from \"./diff.ts\";\n"
+        }
+      }
+    },
+    {
+      "id": "reviewer-test-placement",
+      "document": "rules/reviewer-test-placement.json",
+      "title": "Put tests where npm test runs them",
+      "group": "Repository layout",
+      "examples": {
+        "caught": {
+          "path": "poster/src/policy.test.ts",
+          "text": "import { test } from \"node:test\";\n"
+        },
+        "passes": {
+          "path": "poster/test/policy.test.ts",
+          "text": "import { test } from \"node:test\";\n"
+        }
+      }
+    }
+  ]
+}

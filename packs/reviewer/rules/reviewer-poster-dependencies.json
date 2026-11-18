@@ -1,0 +1,157 @@
+{
+  "format": "rerail.policy/v1",
+  "id": "reviewer-poster-dependencies",
+  "revision": 1,
+  "mode": "steer",
+  "description": "Keep the poster on Node built-ins plus ajv, and keep ajv reachable only from post, since the other jobs install nothing.",
+  "scope": {
+    "include": [
+      "poster/src/**/*.ts",
+      "poster/src/**/*.mts",
+      "poster/src/**/*.cts"
+    ],
+    "exclude": []
+  },
+  "clauses": [
+    {
+      "id": "package-import",
+      "forbid": {
+        "ast": {
+          "language": "typescript",
+          "rule": {
+            "any": [
+              {
+                "kind": "string"
+              },
+              {
+                "kind": "template_string"
+              }
+            ],
+            "regex": "^[\"'`](?:[^./\"'`an][^\"'`]*|a(?:[^j\"'`][^\"'`]*|j(?:[^v\"'`][^\"'`]*|v(?:[^\"'`]+))?)?|n(?:[^o\"'`][^\"'`]*|o(?:[^d\"'`][^\"'`]*|d(?:[^e\"'`][^\"'`]*|e(?:[^:\"'`][^\"'`]*)?)?)?)?)[\"'`]$",
+            "inside": {
+              "any": [
+                {
+                  "kind": "import_statement"
+                },
+                {
+                  "kind": "export_statement"
+                },
+                {
+                  "kind": "arguments",
+                  "inside": {
+                    "kind": "call_expression",
+                    "has": {
+                      "field": "function",
+                      "kind": "import"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "violation": {
+        "code": "POSTER_PACKAGE_IMPORT",
+        "anchor": "witness.span",
+        "message": "Use a node: built-in or code in poster/src; the poster runs with the app's token, so a new dependency needs agreement in an issue first."
+      }
+    },
+    {
+      "id": "ajv-outside-findings",
+      "forbid": {
+        "ast": {
+          "language": "typescript",
+          "rule": {
+            "any": [
+              {
+                "kind": "string"
+              },
+              {
+                "kind": "template_string"
+              }
+            ],
+            "regex": "^[\"'`]ajv(?:/[^\"'`]*)?[\"'`]$",
+            "inside": {
+              "any": [
+                {
+                  "kind": "import_statement"
+                },
+                {
+                  "kind": "export_statement"
+                },
+                {
+                  "kind": "arguments",
+                  "inside": {
+                    "kind": "call_expression",
+                    "has": {
+                      "field": "function",
+                      "kind": "import"
+                    }
+                  }
+                }
+              ]
+            },
+            "not": {
+              "any": [
+                {
+                  "inside": {
+                    "kind": "import_statement",
+                    "regex": "^import\\s+(?:type\\b|\\{(?:\\s*type\\s+[\\w$]+(?:\\s+as\\s+[\\w$]+)?\\s*,?)+\\s*\\}\\s*from\\b)"
+                  }
+                },
+                {
+                  "inside": {
+                    "kind": "export_statement",
+                    "regex": "^export\\s+type\\b"
+                  }
+                }
+              ]
+            }
+          },
+          "file": {
+            "path": {
+              "notRegex": "^poster/src/findings\\.ts$"
+            }
+          }
+        }
+      },
+      "violation": {
+        "code": "AJV_OUTSIDE_FINDINGS",
+        "anchor": "witness.span",
+        "message": "Validate with ajv only in findings.ts: only the post job installs it, and every other job loads cli.ts without it."
+      }
+    },
+    {
+      "id": "static-post-import",
+      "forbid": {
+        "ast": {
+          "language": "typescript",
+          "rule": {
+            "kind": "string",
+            "regex": "^[\"']\\./(?:post|findings)\\.ts[\"']$",
+            "inside": {
+              "kind": "import_statement"
+            },
+            "not": {
+              "inside": {
+                "kind": "import_statement",
+                "regex": "^import\\s+(?:type\\b|\\{(?:\\s*type\\s+[\\w$]+(?:\\s+as\\s+[\\w$]+)?\\s*,?)+\\s*\\}\\s*from\\b)"
+              }
+            }
+          },
+          "file": {
+            "path": {
+              "notRegex": "^poster/src/post\\.ts$"
+            }
+          }
+        }
+      },
+      "violation": {
+        "code": "STATIC_POST_IMPORT",
+        "anchor": "witness.span",
+        "message": "Import post.ts with await import() as cli.ts does, and findings.ts only from post.ts: they load ajv, which only the post job installs."
+      }
+    }
+  ]
+}

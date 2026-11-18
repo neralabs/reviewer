@@ -1,0 +1,47 @@
+{
+  "format": "rerail.policy/v1",
+  "id": "reviewer-caller-pull-request-target",
+  "revision": 1,
+  "mode": "steer",
+  "description": "Show callers pull_request_target and named secrets only; a pull_request trigger lets a pull request rewrite its own reviewer configuration.",
+  "scope": {
+    "include": [
+      "templates/**/*.yml",
+      "templates/**/*.yaml",
+      "templates/**/*.md",
+      "docs/**/*.md",
+      "README.md"
+    ],
+    "exclude": []
+  },
+  "clauses": [
+    {
+      "id": "pull-request-trigger",
+      "forbid": {
+        "regex": {
+          "source": "file.content",
+          "pattern": "(?m)^[ \\t]*(?:-[ \\t]*)?(?P<TRIGGER>pull_request)[ \\t]*:|^[ \\t]*on[ \\t]*:[^#\\n]*?\\b(?P<LISTED>pull_request)\\b(?:[^_]|$)"
+        }
+      },
+      "violation": {
+        "code": "CALLER_PULL_REQUEST",
+        "anchor": "witness.span",
+        "message": "Trigger the caller with pull_request_target, which runs it from the base branch, not pull_request, which runs the pull request's own copy."
+      }
+    },
+    {
+      "id": "secrets-inherit",
+      "forbid": {
+        "regex": {
+          "source": "file.content",
+          "pattern": "(?m)^[ \\t]*secrets[ \\t]*:[ \\t]*inherit\\b"
+        }
+      },
+      "violation": {
+        "code": "CALLER_SECRETS_INHERIT",
+        "anchor": "witness.span",
+        "message": "Name each secret the reviewer needs under secrets: instead of inherit, which hands it every secret the repository can see."
+      }
+    }
+  ]
+}

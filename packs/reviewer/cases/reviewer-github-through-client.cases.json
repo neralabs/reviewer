@@ -1,0 +1,54 @@
+{
+  "caught": [
+    {
+      "path": "poster/src/prepare.ts",
+      "content": "const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${n}`, { headers });\n"
+    },
+    {
+      "path": "modules/lint/run.ts",
+      "content": "import { execFileSync } from \"node:child_process\";\nconst files = execFileSync(\"gh\", [\"pr\", \"diff\", \"--name-only\"], { encoding: \"utf8\" });\n"
+    },
+    {
+      "path": "modules/lint/run.sh",
+      "content": "#!/usr/bin/env bash\nset -euo pipefail\nfiles=\"$(gh pr diff \"$PR\" --name-only)\"\n"
+    },
+    {
+      "path": "scripts/label.sh",
+      "content": "#!/usr/bin/env bash\ncurl -fsS -H \"Authorization: Bearer $GITHUB_TOKEN\" https://api.github.com/repos/o/r/labels\n"
+    },
+    {
+      "path": ".github/workflows/review.yml",
+      "content": "jobs:\n  gate:\n    steps:\n      - run: gh api \"repos/$GITHUB_REPOSITORY/pulls/$PR\"\n"
+    },
+    {
+      "path": "poster/src/ci.ts",
+      "content": "const API = \"https://api.github.com\";\n"
+    }
+  ],
+  "passed": [
+    {
+      "path": "poster/src/github.ts",
+      "content": "const res = await fetch(url, { method, headers: { authorization: `Bearer ${this.token}` } });\n"
+    },
+    {
+      "path": "poster/src/sink.ts",
+      "content": "export async function sendBatch(url: string, token: string, opts: { fetchImpl?: typeof fetch } = {}): Promise<void> {\n  const { fetchImpl = fetch } = opts;\n  await fetchImpl(`${url}/v1/batches`, { method: \"POST\" });\n}\n"
+    },
+    {
+      "path": "poster/src/prepare.ts",
+      "content": "const pr = await gh.get<PullRequest>(`/repos/${owner}/${repo}/pulls/${n}`);\nconst out = execFileSync(\"git\", [\"log\", \"--format=%H\"], { encoding: \"utf8\" });\n"
+    },
+    {
+      "path": "modules/rerail/install.sh",
+      "content": "#!/usr/bin/env bash\n# Not the gh CLI: curl to the results sink.\ncurl --fail --proto '=https' \"$RESULTS_SINK_URL/v1/packages/rerail/$version.tgz\"\n"
+    },
+    {
+      "path": "scripts/run-claude.sh",
+      "content": "#!/usr/bin/env bash\n# gh api is not available to the model\necho \"the high-risk path\"\n"
+    },
+    {
+      "path": "poster/src/agents.ts",
+      "content": "const PREAMBLE = `Where your instructions say to run a command (git diff, gh pr view, a test), read the matching file instead.`;\n"
+    }
+  ]
+}

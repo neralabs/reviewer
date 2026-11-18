@@ -3,6 +3,7 @@
   "packs": [
     { "id": "complexity", "version": "0.1.8" },
     { "id": "javascript", "version": "0.1.9" },
-    { "id": "typescript", "version": "0.1.8" }
+    { "id": "typescript", "version": "0.1.8" },
+    { "path": "packs/reviewer" }
   ]
 }

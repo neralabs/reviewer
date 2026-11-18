@@ -1,0 +1,169 @@
+{
+  "format": "rerail.policy/v1",
+  "id": "reviewer-module-boundary",
+  "revision": 1,
+  "mode": "steer",
+  "description": "Keep the poster and modules apart, meeting only at run.sh and results.json, and keep modules free of npm dependencies.",
+  "scope": {
+    "include": [
+      "poster/src/**/*.ts",
+      "poster/src/**/*.mts",
+      "poster/src/**/*.cts",
+      "modules/**/*.ts",
+      "modules/**/*.mts",
+      "modules/**/*.cts"
+    ],
+    "exclude": [
+      "**/node_modules/**"
+    ]
+  },
+  "clauses": [
+    {
+      "id": "core-imports-module",
+      "forbid": {
+        "ast": {
+          "language": "typescript",
+          "rule": {
+            "any": [
+              {
+                "kind": "string"
+              },
+              {
+                "kind": "template_string"
+              }
+            ],
+            "regex": "^[\"'`](?:\\.\\./)+modules/",
+            "inside": {
+              "any": [
+                {
+                  "kind": "import_statement"
+                },
+                {
+                  "kind": "export_statement"
+                },
+                {
+                  "kind": "arguments",
+                  "inside": {
+                    "kind": "call_expression",
+                    "has": {
+                      "field": "function",
+                      "kind": "import"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "file": {
+            "path": {
+              "regex": "^poster/src/"
+            }
+          }
+        }
+      },
+      "violation": {
+        "code": "CORE_IMPORTS_MODULE",
+        "anchor": "witness.span",
+        "message": "Run the module through runModules and read its results.json; the core knows no module by name. Only poster/test may import module code."
+      }
+    },
+    {
+      "id": "module-imports-poster",
+      "forbid": {
+        "ast": {
+          "language": "typescript",
+          "rule": {
+            "any": [
+              {
+                "kind": "string"
+              },
+              {
+                "kind": "template_string"
+              }
+            ],
+            "regex": "^[\"'`](?:\\.\\./)+poster/",
+            "inside": {
+              "any": [
+                {
+                  "kind": "import_statement"
+                },
+                {
+                  "kind": "export_statement"
+                },
+                {
+                  "kind": "arguments",
+                  "inside": {
+                    "kind": "call_expression",
+                    "has": {
+                      "field": "function",
+                      "kind": "import"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "file": {
+            "path": {
+              "regex": "^modules/"
+            }
+          }
+        }
+      },
+      "violation": {
+        "code": "MODULE_IMPORTS_POSTER",
+        "anchor": "witness.span",
+        "message": "Keep this module self-contained: take what it needs from the MODULE_* variables and write results.json; copy a small helper rather than importing the poster."
+      }
+    },
+    {
+      "id": "module-package",
+      "forbid": {
+        "ast": {
+          "language": "typescript",
+          "rule": {
+            "any": [
+              {
+                "kind": "string"
+              },
+              {
+                "kind": "template_string"
+              }
+            ],
+            "regex": "^[\"'`](?:[^./\"'`n][^\"'`]*|n(?:[^o\"'`][^\"'`]*|o(?:[^d\"'`][^\"'`]*|d(?:[^e\"'`][^\"'`]*|e(?:[^:\"'`][^\"'`]*)?)?)?)?)[\"'`]$",
+            "inside": {
+              "any": [
+                {
+                  "kind": "import_statement"
+                },
+                {
+                  "kind": "export_statement"
+                },
+                {
+                  "kind": "arguments",
+                  "inside": {
+                    "kind": "call_expression",
+                    "has": {
+                      "field": "function",
+                      "kind": "import"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "file": {
+            "path": {
+              "regex": "^modules/"
+            }
+          }
+        }
+      },
+      "violation": {
+        "code": "MODULE_PACKAGE_IMPORT",
+        "anchor": "witness.span",
+        "message": "Use a node: built-in instead: modules run directly on Node with no install step and no dependencies."
+      }
+    }
+  ]
+}

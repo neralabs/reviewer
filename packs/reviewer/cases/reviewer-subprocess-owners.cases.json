@@ -1,0 +1,30 @@
+{
+  "caught": [
+    {
+      "path": "poster/src/post.ts",
+      "content": "import { execFileSync } from \"node:child_process\";\nconst sha = execFileSync(\"git\", [\"rev-parse\", \"HEAD\"], { encoding: \"utf8\" });\n"
+    },
+    {
+      "path": "poster/src/rules-pass.ts",
+      "content": "import { spawnSync } from \"child_process\";\n"
+    },
+    {
+      "path": "poster/src/agents.ts",
+      "content": "const { spawn } = await import(\"node:child_process\");\n"
+    }
+  ],
+  "passed": [
+    {
+      "path": "poster/src/prepare.ts",
+      "content": "import { execFileSync } from \"node:child_process\";\n"
+    },
+    {
+      "path": "poster/src/modules.ts",
+      "content": "import { execFileSync, spawnSync } from \"node:child_process\";\n"
+    },
+    {
+      "path": "poster/src/post.ts",
+      "content": "import type { SpawnSyncReturns } from \"node:child_process\";\nimport { readFileSync } from \"node:fs\";\n"
+    }
+  ]
+}

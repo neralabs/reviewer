@@ -1,0 +1,39 @@
+{
+  "format": "rerail.policy/v1",
+  "id": "reviewer-test-placement",
+  "revision": 1,
+  "mode": "steer",
+  "description": "Put tests where npm test in poster runs them, poster/test/ or a module's own test/ folder; a test file anywhere else never runs.",
+  "scope": {
+    "include": [
+      "poster/**/*.test.ts",
+      "poster/**/*.spec.ts",
+      "poster/**/*.test.mts",
+      "poster/**/*.test.js",
+      "poster/**/*.test.mjs",
+      "modules/**/*.test.ts",
+      "modules/**/*.spec.ts",
+      "modules/**/*.test.mts",
+      "modules/**/*.test.js",
+      "modules/**/*.test.mjs"
+    ],
+    "exclude": [
+      "poster/test/*.test.ts",
+      "modules/*/test/*.test.ts",
+      "**/node_modules/**"
+    ]
+  },
+  "clauses": [
+    {
+      "id": "unrun-test",
+      "forbid": {
+        "file": {}
+      },
+      "violation": {
+        "code": "TEST_NOT_RUN",
+        "anchor": "witness.span",
+        "message": "Move this test to poster/test/<name>.test.ts, or to modules/<id>/test/<name>.test.ts for a module: npm test runs only those."
+      }
+    }
+  ]
+}

@@ -155,6 +155,7 @@ The repository holds the reusable workflow, the scripts and prompts it runs, and
 | Findings schema | [schema/](schema/) |
 | Poster: prepares the context, gates, renders and posts the review (TypeScript, Node) | [poster/](poster/) |
 | Caller workflow template | [templates/](templates/) |
+| This repository's Rerail rule pack: its architecture and the rules that hold it | [packs/reviewer/](packs/reviewer/) |
 
 How they fit together is in [docs/architecture.md](docs/architecture.md).
 
@@ -171,6 +172,7 @@ shellcheck scripts/*.sh
 uvx --from 'reuse[charset-normalizer]==6.2.0' reuse lint
 node scripts/check/check-licenses.mjs
 node scripts/check/check-internal-refs.mjs
+packs/reviewer/test.sh   # needs Rerail (npm install --global @neralabs/rerail) and jq
 ```
 
 To try a change end to end, point a test repository's caller workflow at your branch, in both `uses:` and
@@ -198,6 +200,8 @@ Open a pull request against `main` that links its issue, if it has one. Changes 
 - In `poster/`, `npx tsc --noEmit` and `npm test` pass.
 - `actionlint` and `shellcheck scripts/*.sh` pass.
 - `reuse lint`, `node scripts/check/check-licenses.mjs` and `node scripts/check/check-internal-refs.mjs` pass.
+- `packs/reviewer/test.sh` passes, and a change that breaks a boundary in [packs/reviewer/](packs/reviewer/) either
+  doesn't, or updates the rule and its README section in the same pull request.
 - Tests cover the behavior you changed, and docs that describe it are updated.
 - A change callers see is described in the pull request, for the release notes; a breaking one says how callers
   upgrade ([docs/versioning.md](docs/versioning.md)).

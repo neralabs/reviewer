@@ -38,7 +38,7 @@ jobs:
         with:
           args: -color
       - name: shellcheck
-        run: shellcheck scripts/*.sh modules/*/*.sh poster/test/fixtures/modules/*/run.sh
+        run: shellcheck scripts/*.sh modules/*/*.sh poster/test/fixtures/modules/*/run.sh packs/*/test.sh
 
   licenses:
     name: Licences (REUSE and copyleft gate)
@@ -73,6 +73,45 @@ jobs:
       - name: No ticket IDs, AWS account IDs or staff addresses
         run: node scripts/check/check-internal-refs.mjs
 
+  # The repository's own rule pack (packs/reviewer): every rule is valid and gets its cases right, and the pack installs
+  # and scans this checkout the way a scan of the repository runs it. Violations are listed, not failed on.
+  rerail-pack:
+    name: Rerail pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      RERAIL_VERSION: 0.1.5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      - name: Install Rerail
+        run: npm install --global --ignore-scripts "@neralabs/rerail@$RERAIL_VERSION"
+      - name: Test the rules against their cases
+        run: packs/reviewer/test.sh
+      - name: Add, approve and scan with the pack
+        env:
+          RERAIL_EXPERIMENTAL_HEADLESS_SCAN: "1"
+        run: |
+          set -euo pipefail
+          export RERAIL_HOME="$RUNNER_TEMP/rerail-home"
+          rerail packs add ./packs/reviewer
+          rerail rules approve @neralabs/rerail-pack-reviewer
+          rerail scan --json --no-send --pack reviewer >"$RUNNER_TEMP/scan.json"
+          {
+            echo "| Rule | Mode | Violations |"
+            echo "| --- | --- | --: |"
+            jq -r '.violations as $v | .rules[] | .ruleId as $id
+              | "| \($id) | \(.mode) | \([$v[] | select(.ruleId == $id)] | length) |"' "$RUNNER_TEMP/scan.json"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          jq -r '.violations[] | "::warning file=\(.path),line=\(.start.line // 1)::\(.ruleId): \(.message)"' "$RUNNER_TEMP/scan.json"
+          # Fails when the scan didn't complete, or the approval didn't bind and the rules ran in Log.
+          jq -e '.status == "completed" and (.failures | length) == 0 and ([.rules[] | select(.mode == "log")] | length) == 0' \
+            "$RUNNER_TEMP/scan.json" >/dev/null
+
   # The one check to require. It needs every other job and fails when any of them failed or was cancelled.
   ci-result:
     name: CI result
@@ -81,6 +120,7 @@ jobs:
       - workflows
       - licenses
       - internal-refs
+      - rerail-pack
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
