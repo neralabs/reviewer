@@ -103,9 +103,9 @@ input or secret, the `REVIEW.md` settings or the command syntax is breaking.
 
 ## Rule details
 
-Each rule is in Steer: it matches nothing on `main`, so every match it reports is new. A reviewer caller that runs the
-pack through its Rerail module (`rerail_repo_packs: packs/reviewer`) maps Steer to the `warning` level, and a new
-warning there is a blocker.
+Each rule is in Steer: it matches nothing on `main`, so every match it reports is new. A reviewer caller whose Rerail
+module runs the pack (through `.rerail/packs.json`, or `rerail_repo_packs: packs/reviewer` with a Rerail that doesn't
+read that file) maps Steer to the `warning` level, and a new warning there is a blocker.
 
 ### `reviewer-github-writes-in-post`
 

@@ -73,14 +73,12 @@ jobs:
       - name: No ticket IDs, AWS account IDs or staff addresses
         run: node scripts/check/check-internal-refs.mjs
 
-  # The repository's own rule pack (packs/reviewer): every rule is valid and gets its cases right, and the pack installs
-  # and scans this checkout the way a scan of the repository runs it. Violations are listed, not failed on.
+  # The repository's own rule pack (packs/reviewer): every rule is valid and gets its cases right, and the Rerail module
+  # scans this checkout with it as a scheduled scan of the repository runs it. Violations are listed, not failed on.
   rerail-pack:
     name: Rerail pack
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      RERAIL_VERSION: 0.1.5
     steps:
       - uses: actions/checkout@v7
         with:
@@ -88,29 +86,43 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "24"
+      # The module's own install with rerail_package empty: the release modules/rerail/pin/package.json pins.
       - name: Install Rerail
-        run: npm install --global --ignore-scripts "@neralabs/rerail@$RERAIL_VERSION"
+        run: bash modules/rerail/install.sh
       - name: Test the rules against their cases
         run: packs/reviewer/test.sh
-      - name: Add, approve and scan with the pack
+      # The module (modules/rerail/run.ts) in repository mode: the packs .rerail/packs.json lists, with no --pack and
+      # packs/reviewer approved from this checkout. A Rerail that doesn't read that file (0.1.5 doesn't) gets
+      # packs/reviewer from RERAIL_REPO_PACKS instead, with --pack.
+      - name: Scan with the Rerail module
         env:
-          RERAIL_EXPERIMENTAL_HEADLESS_SCAN: "1"
+          RERAIL_REPO_PACKS: packs/reviewer
         run: |
           set -euo pipefail
-          export RERAIL_HOME="$RUNNER_TEMP/rerail-home"
-          rerail packs add ./packs/reviewer
-          rerail rules approve @neralabs/rerail-pack-reviewer
-          rerail scan --json --no-send --pack reviewer >"$RUNNER_TEMP/scan.json"
+          work="$RUNNER_TEMP/rerail-module"
+          mkdir -p "$work/home" "$work/out"
+          export RERAIL_HOME="$work/home/rerail-home"
+          head="$(git rev-parse HEAD)"
+          MODULE_MODE=repository MODULE_CHECKOUT="$GITHUB_WORKSPACE" MODULE_BASE_CHECKOUT="$GITHUB_WORKSPACE" \
+            MODULE_BASE_SHA="$head" MODULE_MERGE_BASE="$head" MODULE_HOME="$work/home" MODULE_OUT="$work/out" \
+            node modules/rerail/run.ts
+          if ! jq -e '.status == "completed"' "$work/out/results.json" >/dev/null; then
+            echo "::error::Rerail module: $(jq -r .error "$work/out/results.json")"
+            exit 1
+          fi
+          scan="$work/out/raw/scan.json"
           {
-            echo "| Rule | Mode | Violations |"
-            echo "| --- | --- | --: |"
+            echo "| Pack | Rule | Mode | Violations |"
+            echo "| --- | --- | --- | --: |"
             jq -r '.violations as $v | .rules[] | .ruleId as $id
-              | "| \($id) | \(.mode) | \([$v[] | select(.ruleId == $id)] | length) |"' "$RUNNER_TEMP/scan.json"
+              | "| \(.source.packId // "") | \($id) | \(.mode) | \([$v[] | select(.ruleId == $id)] | length) |"' "$scan"
           } | tee -a "$GITHUB_STEP_SUMMARY"
-          jq -r '.violations[] | "::warning file=\(.path),line=\(.start.line // 1)::\(.ruleId): \(.message)"' "$RUNNER_TEMP/scan.json"
-          # Fails when the scan didn't complete, or the approval didn't bind and the rules ran in Log.
-          jq -e '.status == "completed" and (.failures | length) == 0 and ([.rules[] | select(.mode == "log")] | length) == 0' \
-            "$RUNNER_TEMP/scan.json" >/dev/null
+          jq -r '.violations[] | "::warning file=\(.path),line=\(.start.line // 1)::\(.ruleId): \(.message)"' "$scan"
+          # Fails when the scan didn't complete, packs/reviewer didn't run, or its approval didn't bind and it ran in
+          # Log. Other packs' rules keep their own modes, Log included.
+          jq -e '.status == "completed" and (.failures | length) == 0
+            and ([.rules[] | select(.source.packId == "reviewer")] | length) > 0
+            and ([.rules[] | select(.source.packId == "reviewer" and .mode == "log")] | length) == 0' "$scan" >/dev/null
 
   # The one check to require. It needs every other job and fails when any of them failed or was cancelled.
   ci-result:

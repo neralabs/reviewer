@@ -59,10 +59,10 @@ anywhere else unless the caller sets `send_results: true` and passes the secrets
 The records hold no source code, diff, pull request text, model output or credential. Rule messages are the rule
 authors' text. Who can read the data at the sink is up to whoever runs it.
 
-Modules install their own tools: the Rerail module fetches Rerail from where the caller says. That is
-`RERAIL_PACKAGE_URL`, the npm registry, a URL in `rerail_package`, or, for `rerail_package: remote:<version>`, the
-results sink. The sink then sees the token, the version and the runner's address. Nothing about the repository is
-sent to fetch it.
+Modules install their own tools: the Rerail module fetches Rerail from where the caller says, or by default the
+release the reviewer pins from the npm registry. That is `RERAIL_PACKAGE_URL`, the npm registry, a URL in
+`rerail_package`, or, for `rerail_package: remote:<version>`, the results sink. The sink then sees the token, the
+version and the runner's address. Nothing about the repository is sent to fetch it.
 
 ## To the model provider: the rules pass
 

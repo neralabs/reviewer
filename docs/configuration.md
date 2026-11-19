@@ -21,9 +21,9 @@ Passed under `with:` in the caller.
 | `large_pr_lines` | no | `50000` | Changed lines, excluding generated files, above which a review is summary-only unless someone asks for `review full`. `largePrLines` in `REVIEW.md` overrides it. |
 | `modules` | no | `""` | Deterministic checks to run beside the review, space-separated module ids ([modules.md](modules.md)), e.g. `rerail`. With modules, a `schedule` or `workflow_dispatch` trigger in the caller runs them over the whole branch. |
 | `rules_pass_budget_usd` | no | `"3"` | Spend cap for the rules pass, the second model step over the modules' new findings. |
-| `rerail_package` | with `modules: rerail` | `""` | What to install Rerail from: an npm spec, a tarball URL, or `remote:<version>` from the results sink ([rerail.md](rerail.md)). |
-| `rerail_packs` | no | `""` | Rerail's own rule packs, space-separated ids. |
-| `rerail_repo_packs` | no | `""` | Rule packs in the repository, space-separated paths from its root. Taken from the base branch only and approved there. |
+| `rerail_package` | no | `""` | What to install Rerail from: an npm spec, a tarball URL, or `remote:<version>` from the results sink. Empty installs the release the reviewer pins and tests with, in `modules/rerail/pin/package.json` ([rerail.md](rerail.md)). |
+| `rerail_packs` | no | `""` | Rerail's own rule packs, space-separated ids. Ignored when the base branch has `.rerail/packs.json` ([rerail.md](rerail.md#which-packs-run)). |
+| `rerail_repo_packs` | no | `""` | Rule packs in the repository, space-separated paths from its root. Taken from the base branch only and approved there. Ignored when the base branch has `.rerail/packs.json`. |
 | `send_results` | no | `false` | Send the modules' results to the results sink ([modules.md](modules.md#the-results-sink), [privacy.md](privacy.md)). |
 | `claude_code_version` | no | pinned in `review.yml` | Version of `@anthropic-ai/claude-code` to install. Change it only together with a reviewer release that was tested with it. |
 

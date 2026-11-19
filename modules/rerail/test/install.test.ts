@@ -1,18 +1,28 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
 const SCRIPT = new URL("../install.sh", import.meta.url).pathname;
+// Our own committed pin; the test of the default checks that it is an exact version.
+const pinFile = JSON.parse(readFileSync(new URL("../pin/package.json", import.meta.url), "utf8")) as { dependencies: Record<string, string> };
+const PIN = pinFile.dependencies["@neralabs/rerail"];
 
 /**
  * Runs modules/rerail/install.sh with fake curl, npm and rerail first on PATH. Each logs its arguments; curl also
- * logs the header file it was given and writes the --output file, or fails when FAKE_CURL_FAIL is set.
+ * logs the header file it was given and writes the --output file, or fails when FAKE_CURL_FAIL is set. With `pin`,
+ * a copy of the script runs beside that as its pin/package.json.
  */
-function run(env: Record<string, string>) {
+function run(env: Record<string, string>, pin?: string) {
   const dir = mkdtempSync(join(tmpdir(), "install-rerail-"));
+  const script = pin === undefined ? SCRIPT : join(dir, "module", "install.sh");
+  if (pin !== undefined) {
+    mkdirSync(join(dir, "module", "pin"), { recursive: true });
+    copyFileSync(SCRIPT, script);
+    writeFileSync(join(dir, "module", "pin", "package.json"), pin);
+  }
   const log = join(dir, "calls.log");
   const fake = (name: string, body: string) => {
     writeFileSync(join(dir, name), `#!/usr/bin/env bash\necho "${name} $*" >> "${log}"\n${body}\n`);
@@ -31,7 +41,7 @@ done`,
   );
   fake("npm", `echo "npm-env \${RESULTS_SINK_TOKEN:-unset} \${RERAIL_PACKAGE_URL:-unset}" >> "${log}"`);
   fake("rerail", "");
-  const res = spawnSync("bash", [SCRIPT], {
+  const res = spawnSync("bash", [script], {
     encoding: "utf8",
     env: { PATH: `${dir}:${process.env.PATH}`, RUNNER_TEMP: dir, ...env },
   });
@@ -88,8 +98,18 @@ test("remote:<version> refuses an odd version, missing secrets, plain http and a
   }
 });
 
-test("no package and no secret is an error", () => {
-  const { status, out } = run({});
-  assert.equal(status, 1);
-  assert.match(out, /set rerail_package/);
+test("no package and no secret installs the pinned release", () => {
+  assert.match(PIN ?? "", /^\d+\.\d+\.\d+$/);
+  const { status, calls, out } = run({});
+  assert.equal(status, 0, out);
+  assert.equal(calls[0], `npm install --global @neralabs/rerail@${PIN}`);
+});
+
+test("no package, and a pin that names no exact version, is an error", () => {
+  for (const pin of ["{}", JSON.stringify({ dependencies: { "@neralabs/rerail": "^0.1.5" } }), "not json"]) {
+    const { status, out, calls } = run({}, pin);
+    assert.equal(status, 1, pin);
+    assert.match(out, /pins no exact @neralabs\/rerail version/);
+    assert.ok(!calls.some((c) => c.startsWith("npm ")));
+  }
 });
