@@ -54,9 +54,9 @@ jobs:
       # Modules (optional, docs/modules.md): deterministic checks beside the review. A second, smaller rules
       # pass turns their new findings into recommendations; the first review never sees them.
       # modules: rerail
-      # rerail_package: "@neralabs/rerail@<version>"
-      # rerail_packs: "" # pack ids
-      # rerail_repo_packs: "" # packs in this repo, paths from its root (approved from the base branch only)
+      # rerail_package: "@neralabs/rerail@<version>" # optional; left out, the Rerail release the reviewer pins
+      # rerail_packs: "" # pack ids; empty, .rerail/packs.json decides; set, they replace its packs (docs/rerail.md)
+      # rerail_repo_packs: "" # packs in this repo, paths from its root (approved from the base branch only); likewise
       # send_results: false # true sends module results to RESULTS_SINK_URL (docs/privacy.md)
     # Name each secret instead of `secrets: inherit`, which would hand the reviewer every secret this
     # repo can see.

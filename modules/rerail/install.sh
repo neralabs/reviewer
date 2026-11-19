@@ -2,7 +2,8 @@
 # Rerail module: installs Rerail, then adds the caller's rule packs (by id).
 #
 #   RERAIL_PACKAGE_URL   secret; when set, installed from as is (npm spec or tarball URL), ahead of RERAIL_PACKAGE
-#   RERAIL_PACKAGE       the rerail_package input: an npm spec, a tarball URL, or remote:<version>
+#   RERAIL_PACKAGE       the rerail_package input: an npm spec, a tarball URL, or remote:<version>; when empty, the
+#                        release pin/package.json pins, which the module is tested with
 #   RERAIL_PACKS         space-separated rule pack ids, each added with `rerail packs add`
 #   RESULTS_SINK_URL     for remote:<version>: the results sink, which also serves the Rerail tarball at
 #   RESULTS_SINK_TOKEN   <RESULTS_SINK_URL>/v1/packages/rerail/<version>.tgz, with this bearer token
@@ -11,11 +12,16 @@
 # and curl doesn't send it on to the host a redirect points at (a short-lived storage URL). The secrets are unset
 # before npm runs.
 set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
 
 source="${RERAIL_PACKAGE_URL:-${RERAIL_PACKAGE:-}}"
 if [ -z "$source" ]; then
-  echo "::error::set rerail_package, or the secret RERAIL_PACKAGE_URL"
-  exit 1
+  pin="$(node -p 'require(process.argv[1]).dependencies?.["@neralabs/rerail"] ?? ""' "$here/pin/package.json" 2>/dev/null || true)"
+  if ! [[ "$pin" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+    echo "::error::rerail_package is empty, and modules/rerail/pin/package.json pins no exact @neralabs/rerail version to install instead"
+    exit 1
+  fi
+  source="@neralabs/rerail@$pin"
 fi
 
 if [ -z "${RERAIL_PACKAGE_URL:-}" ] && [[ "$source" == remote:* ]]; then

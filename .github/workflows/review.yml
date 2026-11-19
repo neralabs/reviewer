@@ -97,17 +97,17 @@ on:
         type: string
         default: "3"
       rerail_package:
-        description: Rerail module. What `npm install --global` installs Rerail from (an npm spec or a tarball URL), or `remote:<version>` to download it from the results sink. The secret RERAIL_PACKAGE_URL, when set, is used instead.
+        description: Rerail module. What `npm install --global` installs Rerail from (an npm spec or a tarball URL), or `remote:<version>` to download it from the results sink. Empty installs the Rerail release the reviewer pins and tests the module with (modules/rerail/pin/package.json). The secret RERAIL_PACKAGE_URL, when set, is used instead.
         required: false
         type: string
         default: ""
       rerail_packs:
-        description: Rerail module. Rule packs to check with besides `.rerail/rules/`, space-separated pack ids.
+        description: Rerail module. Rule packs to check with besides `.rerail/rules/`, space-separated pack ids. When the base branch has `.rerail/packs.json`, its packs run while this and rerail_repo_packs are both empty; set, they replace the file's packs (an experimental pack scan, which needs a Rerail release with neralabs/rerail#829).
         required: false
         type: string
         default: ""
       rerail_repo_packs:
-        description: Rerail module. Rule packs that live in this repository, space-separated paths from its root (e.g. `packs/team`), taken from the base branch only and approved there.
+        description: Rerail module. Rule packs that live in this repository, space-separated paths from its root (e.g. `packs/team`), taken from the base branch only and approved there. When the base branch has `.rerail/packs.json`, its packs run while this and rerail_packs are both empty; set, they replace the file's packs (an experimental pack scan, which needs a Rerail release with neralabs/rerail#829).
         required: false
         type: string
         default: ""

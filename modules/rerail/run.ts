@@ -1,10 +1,11 @@
 // Rerail module: a headless `rerail scan` (its `rerail.scan/1` output) turned into the reviewer's module result.
 // Called by run.sh after Rerail is installed. Inputs are the module contract's MODULE_* variables (docs/modules.md)
-// plus RERAIL_PACKS and RERAIL_REPO_PACKS.
+// plus RERAIL_PACKS and RERAIL_REPO_PACKS: the packs, or, set beside `.rerail/packs.json`, a replacement for its packs.
 //
 // Trust: rules and packs are approved only from MODULE_BASE_CHECKOUT (the base branch's tip in diff mode, the
-// branch itself in repository mode), through Rerail's normal approval, and the scan reads its rules from
-// MODULE_BASE_SHA (--rules-ref). Nothing from the change under review is approved or used as config.
+// branch itself in repository mode), through Rerail's normal approval, and the scan reads its rules, and the packs
+// `.rerail/packs.json` lists, from MODULE_BASE_SHA (--rules-ref). Nothing from the change under review is approved
+// or used as config.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
@@ -36,6 +37,8 @@ export interface ScanResult {
   rules: { ruleId: string; mode: RuleMode }[];
   violations: ScanViolation[];
   failures: { message: string }[];
+  /** The packs the scan ran; only from a Rerail that reads `.rerail/packs.json` (neralabs/rerail#736). */
+  packs?: unknown[];
 }
 
 export function parseScan(text: string): ScanResult {
@@ -52,15 +55,17 @@ function failure(err: unknown, what: string): Error {
   return new Error(`${what} failed (exit ${e.status ?? "?"}): ${(e.stderr || e.stdout || e.message).trim().slice(0, 500)}`);
 }
 
+/** Rerail's environment with its headless-scan experiment on, and no other (neralabs/rerail#667). */
+const headless = (): NodeJS.ProcessEnv => ({ ...process.env, RERAIL_EXPERIMENTAL_HEADLESS_SCAN: "1" });
+
 /**
  * `rerail scan … --json`. Exit 0 is a completed scan whatever it found; 1 is a failed scan that may still print its
- * result. A scan with no session is experimental in Rerail and refused unless `RERAIL_EXPERIMENTAL_HEADLESS_SCAN=1`
- * (neralabs/rerail#667), so the scan gets that, and no other experiment; a Rerail from before the switch ignores it.
+ * result. A scan with no session is experimental in Rerail and refused unless `RERAIL_EXPERIMENTAL_HEADLESS_SCAN=1`,
+ * so the scan gets that; a Rerail from before the switch ignores it.
  */
 export function runScan(cwd: string, args: readonly string[]): ScanResult {
   try {
-    const env = { ...process.env, RERAIL_EXPERIMENTAL_HEADLESS_SCAN: "1" };
-    return parseScan(execFileSync(bin(), ["scan", ...args, "--json"], { cwd, env, encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] }));
+    return parseScan(execFileSync(bin(), ["scan", ...args, "--json"], { cwd, env: headless(), encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] }));
   } catch (err) {
     const e = err as { status?: number; stdout?: string };
     if (e.status === 1 && e.stdout?.trim()) return parseScan(e.stdout);
@@ -68,9 +73,9 @@ export function runScan(cwd: string, args: readonly string[]): ScanResult {
   }
 }
 
-function rerail(cwd: string, args: readonly string[]): void {
+function rerail(cwd: string, args: readonly string[], env: NodeJS.ProcessEnv = process.env): void {
   try {
-    execFileSync(bin(), args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    execFileSync(bin(), args, { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   } catch (err) {
     throw failure(err, `rerail ${args.slice(0, 2).join(" ")}`);
   }
@@ -111,22 +116,128 @@ function jsonField(path: string, field: string): string {
 }
 
 /**
- * The one approval step, through Rerail's normal mechanism and only for content in `baseDir`: adds and approves
- * each repository pack, and approves each rule in `.rerail/rules/`. The scan then finds those approvals by content
- * digest, so anything the change edits runs unapproved, in log. Returns the repository packs' ids, for `--pack`.
+ * The `path` packs the base branch's `.rerail/packs.json` lists, or undefined when it has none. Rerail reads and
+ * checks the file itself (neralabs/rerail#736); the module only needs its paths, to approve those packs.
  */
-export function approveFromBase(baseDir: string, repoPacks: readonly string[]): string[] {
-  const ids = repoPacks.map((rel) => {
+export function listedRepoPacks(baseDir: string): string[] | undefined {
+  const file = join(baseDir, ".rerail", "packs.json");
+  if (!existsSync(file)) return undefined;
+  let doc: unknown;
+  try {
+    doc = JSON.parse(readFileSync(file, "utf8"));
+  } catch (err) {
+    throw new Error(`.rerail/packs.json on the base branch is not JSON: ${(err as Error).message}`);
+  }
+  const packs = doc !== null && typeof doc === "object" && "packs" in doc ? doc.packs : undefined;
+  if (!Array.isArray(packs)) throw new Error(".rerail/packs.json on the base branch has no packs list");
+  return packs.flatMap((pack: unknown) =>
+    pack !== null && typeof pack === "object" && "path" in pack && typeof pack.path === "string" ? [pack.path] : [],
+  );
+}
+
+/** A scan of an empty repository whose `.rerail/packs.json` lists no packs: what the installed Rerail does with it. */
+function probeScan(home: string, args: readonly string[]): ScanResult {
+  const dir = join(home, "packs-file-probe");
+  mkdirSync(join(dir, ".rerail"), { recursive: true });
+  writeFileSync(join(dir, ".rerail", "packs.json"), `${JSON.stringify({ schema: "rerail.packs/1", packs: [] })}\n`);
+  git(dir, ["init", "--quiet"]);
+  return runScan(dir, ["--scope", "repository", "--no-send", ...args]);
+}
+
+/**
+ * Whether the installed Rerail reads `.rerail/packs.json` (neralabs/rerail#736, after 0.1.5). Its version can't tell,
+ * as a build of Rerail's main still says 0.1.5, so this asks a probe scan: a Rerail that reads the file says which
+ * packs it ran (`packs`), and an older one has no such field.
+ */
+export function readsPacksFile(home: string): boolean {
+  return Array.isArray(probeScan(home, []).packs);
+}
+
+/** Why a probe scan with `args` didn't complete, or undefined when it did. */
+function probeFailure(home: string, args: readonly string[]): string | undefined {
+  try {
+    const scan = probeScan(home, args);
+    return scan.status === "completed" ? undefined : scan.failures.map((f) => f.message).join("; ") || "the scan failed";
+  } catch (err) {
+    return (err as Error).message;
+  }
+}
+
+/**
+ * Throws unless the installed Rerail takes `--pack` beside `.rerail/packs.json`, in place of the packs the file lists
+ * (neralabs/rerail#829). A Rerail that reads the file (#736) but predates #829 refuses `--pack` there; one that doesn't
+ * read the file takes `--pack` as it always did. Asked with a probe scan, not the version.
+ */
+function checkPackOverride(home: string, packs: readonly string[]): void {
+  const failure = probeFailure(home, packs.flatMap((p) => ["--pack", p]));
+  if (failure === undefined) return;
+  if (!readsPacksFile(home)) throw new Error(`a scan with --pack ${packs.join(" ")} failed: ${failure}`);
+  throw new Error(
+    "rerail_packs and rerail_repo_packs replace the packs the base branch's .rerail/packs.json lists, but this Rerail " +
+      "refuses --pack beside that file: that needs a Rerail release with neralabs/rerail#829. Leave both inputs empty " +
+      `to scan with the file's packs (rerail: ${failure})`,
+  );
+}
+
+/** Adds and approves each repository pack in `repoPacks`, from the base checkout, and returns their ids. */
+function addRepoPacks(baseDir: string, repoPacks: readonly string[]): string[] {
+  return repoPacks.map((rel) => {
     const dir = packDirUnder(baseDir, rel);
     const id = jsonField(join(dir, "pack.json"), "id");
     rerail(baseDir, ["packs", "add", dir]);
     rerail(baseDir, ["rules", "approve", jsonField(join(dir, "package.json"), "name"), "--repo", baseDir]);
     return id;
   });
-  const rulesDir = join(baseDir, ".rerail", "rules");
+}
+
+/**
+ * With `.rerail/packs.json`: approves each `path` pack it lists, as the base checkout has it, by package name (its
+ * id when it has no package.json). Nothing is added: the scan reads the packs from `--rules-ref`, and Rerail finds
+ * the listed ones in `--repo`'s file only under the headless-scan experiment.
+ */
+function approveListedPacks(baseDir: string, paths: readonly string[]): void {
+  for (const rel of paths) {
+    const dir = packDirUnder(baseDir, rel);
+    const name = existsSync(join(dir, "package.json")) ? jsonField(join(dir, "package.json"), "name") : jsonField(join(dir, "pack.json"), "id");
+    rerail(baseDir, ["rules", "approve", name, "--repo", baseDir], headless());
+  }
+}
+
+/**
+ * The packs for `--pack`, approving the ones the repository keeps. Without `.rerail/packs.json` the inputs decide. With
+ * it, the file decides while `rerail_packs` and `rerail_repo_packs` are both empty; either one set replaces the file's
+ * packs with `--pack` (an experimental pack scan).
+ */
+function approvePacks(e: Env): string[] {
+  const listed = listedRepoPacks(e.baseCheckout);
+  if (listed === undefined) return [...e.packs, ...addRepoPacks(e.baseCheckout, e.repoPacks)];
+  if (e.packs.length > 0 || e.repoPacks.length > 0) {
+    console.log("Rerail module: rerail_packs and rerail_repo_packs replace the packs the base branch's .rerail/packs.json lists (--pack)");
+    const packs = [...e.packs, ...addRepoPacks(e.baseCheckout, e.repoPacks)];
+    checkPackOverride(e.home, packs);
+    return packs;
+  }
+  if (readsPacksFile(e.home)) {
+    console.log("Rerail module: the base branch's .rerail/packs.json decides the packs");
+    approveListedPacks(e.baseCheckout, listed);
+    return [];
+  }
+  console.log("::notice::Rerail module: the base branch has .rerail/packs.json, but this Rerail doesn't read it (that needs a release with neralabs/rerail#736), so only .rerail/rules/ runs; name packs in rerail_packs or rerail_repo_packs to run them");
+  return [];
+}
+
+/**
+ * The one approval step, through Rerail's normal mechanism and only for content in the base checkout: the
+ * repository's packs (`approvePacks`), then each rule in `.rerail/rules/`. The scans then find those approvals by
+ * content digest, so anything the change edits runs unapproved, in log. Returns the scans' `--pack` arguments: none
+ * when `.rerail/packs.json` decides the packs.
+ */
+export function approveFromBase(e: Env): string[] {
+  const packs = approvePacks(e);
+  const rulesDir = join(e.baseCheckout, ".rerail", "rules");
   const ruleFiles = existsSync(rulesDir) ? readdirSync(rulesDir).filter((f) => f.endsWith(".json")).sort() : [];
-  for (const file of ruleFiles) rerail(baseDir, ["rules", "approve", jsonField(join(rulesDir, file), "id"), "--repo", baseDir]);
-  return ids;
+  for (const file of ruleFiles) rerail(e.baseCheckout, ["rules", "approve", jsonField(join(rulesDir, file), "id"), "--repo", e.baseCheckout]);
+  return packs.flatMap((p) => ["--pack", p]);
 }
 
 export const LEVEL: Record<RuleMode, Level> = { block: "error", steer: "warning", log: "note" };
@@ -205,8 +316,7 @@ export function toResult(scan: ScanResult, mode: Env["mode"], existing: Readonly
 /** Scans, writes raw/, sink.json and results.json. Throws on a failure, which main() records. */
 export function scan(e: Env): void {
   mkdirSync(join(e.out, "raw"), { recursive: true });
-  const packIds = approveFromBase(e.baseCheckout, e.repoPacks);
-  const rulesArgs = ["--rules-ref", e.baseSha, ...[...e.packs, ...packIds].flatMap((p) => ["--pack", p])];
+  const rulesArgs = ["--rules-ref", e.baseSha, ...approveFromBase(e)];
   const scope = e.mode === "diff" ? ["--scope", "git-diff", "--base", e.mergeBase] : ["--scope", "repository"];
   const head = runScan(e.checkout, [...scope, ...rulesArgs]);
   writeFileSync(join(e.out, "raw", "scan.json"), `${JSON.stringify(head, null, 2)}\n`);
