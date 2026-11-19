@@ -102,12 +102,12 @@ on:
         type: string
         default: ""
       rerail_packs:
-        description: Rerail module. Rule packs to check with besides `.rerail/rules/`, space-separated pack ids. Ignored when the base branch has `.rerail/packs.json` and the installed Rerail reads it; that file decides the packs then.
+        description: Rerail module. Rule packs to check with besides `.rerail/rules/`, space-separated pack ids. When the base branch has `.rerail/packs.json`, its packs run while this and rerail_repo_packs are both empty; set, they replace the file's packs (an experimental pack scan, which needs a Rerail release with neralabs/rerail#829).
         required: false
         type: string
         default: ""
       rerail_repo_packs:
-        description: Rerail module. Rule packs that live in this repository, space-separated paths from its root (e.g. `packs/team`), taken from the base branch only and approved there. Ignored when the base branch has `.rerail/packs.json` and the installed Rerail reads it; that file decides the packs then.
+        description: Rerail module. Rule packs that live in this repository, space-separated paths from its root (e.g. `packs/team`), taken from the base branch only and approved there. When the base branch has `.rerail/packs.json`, its packs run while this and rerail_packs are both empty; set, they replace the file's packs (an experimental pack scan, which needs a Rerail release with neralabs/rerail#829).
         required: false
         type: string
         default: ""

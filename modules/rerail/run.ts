@@ -1,6 +1,6 @@
 // Rerail module: a headless `rerail scan` (its `rerail.scan/1` output) turned into the reviewer's module result.
 // Called by run.sh after Rerail is installed. Inputs are the module contract's MODULE_* variables (docs/modules.md)
-// plus RERAIL_PACKS and RERAIL_REPO_PACKS, which count only when the packs don't come from `.rerail/packs.json`.
+// plus RERAIL_PACKS and RERAIL_REPO_PACKS: the packs, or, set beside `.rerail/packs.json`, a replacement for its packs.
 //
 // Trust: rules and packs are approved only from MODULE_BASE_CHECKOUT (the base branch's tip in diff mode, the
 // branch itself in repository mode), through Rerail's normal approval, and the scan reads its rules, and the packs
@@ -135,20 +135,51 @@ export function listedRepoPacks(baseDir: string): string[] | undefined {
   );
 }
 
-/**
- * Whether the installed Rerail reads `.rerail/packs.json` (neralabs/rerail#736, after 0.1.5). Its version can't tell,
- * as a build of Rerail's main still says 0.1.5, so this scans an empty repository that lists no packs: a Rerail that
- * reads the file says which packs it ran (`packs`), and an older one has no such field.
- */
-export function readsPacksFile(home: string): boolean {
+/** A scan of an empty repository whose `.rerail/packs.json` lists no packs: what the installed Rerail does with it. */
+function probeScan(home: string, args: readonly string[]): ScanResult {
   const dir = join(home, "packs-file-probe");
   mkdirSync(join(dir, ".rerail"), { recursive: true });
   writeFileSync(join(dir, ".rerail", "packs.json"), `${JSON.stringify({ schema: "rerail.packs/1", packs: [] })}\n`);
   git(dir, ["init", "--quiet"]);
-  return Array.isArray(runScan(dir, ["--scope", "repository", "--no-send"]).packs);
+  return runScan(dir, ["--scope", "repository", "--no-send", ...args]);
 }
 
-/** Without `.rerail/packs.json`: adds and approves each repository pack in `repoPacks`, and returns their ids. */
+/**
+ * Whether the installed Rerail reads `.rerail/packs.json` (neralabs/rerail#736, after 0.1.5). Its version can't tell,
+ * as a build of Rerail's main still says 0.1.5, so this asks a probe scan: a Rerail that reads the file says which
+ * packs it ran (`packs`), and an older one has no such field.
+ */
+export function readsPacksFile(home: string): boolean {
+  return Array.isArray(probeScan(home, []).packs);
+}
+
+/** Why a probe scan with `args` didn't complete, or undefined when it did. */
+function probeFailure(home: string, args: readonly string[]): string | undefined {
+  try {
+    const scan = probeScan(home, args);
+    return scan.status === "completed" ? undefined : scan.failures.map((f) => f.message).join("; ") || "the scan failed";
+  } catch (err) {
+    return (err as Error).message;
+  }
+}
+
+/**
+ * Throws unless the installed Rerail takes `--pack` beside `.rerail/packs.json`, in place of the packs the file lists
+ * (neralabs/rerail#829). A Rerail that reads the file (#736) but predates #829 refuses `--pack` there; one that doesn't
+ * read the file takes `--pack` as it always did. Asked with a probe scan, not the version.
+ */
+function checkPackOverride(home: string, packs: readonly string[]): void {
+  const failure = probeFailure(home, packs.flatMap((p) => ["--pack", p]));
+  if (failure === undefined) return;
+  if (!readsPacksFile(home)) throw new Error(`a scan with --pack ${packs.join(" ")} failed: ${failure}`);
+  throw new Error(
+    "rerail_packs and rerail_repo_packs replace the packs the base branch's .rerail/packs.json lists, but this Rerail " +
+      "refuses --pack beside that file: that needs a Rerail release with neralabs/rerail#829. Leave both inputs empty " +
+      `to scan with the file's packs (rerail: ${failure})`,
+  );
+}
+
+/** Adds and approves each repository pack in `repoPacks`, from the base checkout, and returns their ids. */
 function addRepoPacks(baseDir: string, repoPacks: readonly string[]): string[] {
   return repoPacks.map((rel) => {
     const dir = packDirUnder(baseDir, rel);
@@ -172,19 +203,27 @@ function approveListedPacks(baseDir: string, paths: readonly string[]): void {
   }
 }
 
-/** The packs for `--pack`, approving the ones the repository keeps. */
+/**
+ * The packs for `--pack`, approving the ones the repository keeps. Without `.rerail/packs.json` the inputs decide. With
+ * it, the file decides while `rerail_packs` and `rerail_repo_packs` are both empty; either one set replaces the file's
+ * packs with `--pack` (an experimental pack scan).
+ */
 function approvePacks(e: Env): string[] {
   const listed = listedRepoPacks(e.baseCheckout);
-  if (listed !== undefined && readsPacksFile(e.home)) {
-    const ignored = e.packs.length || e.repoPacks.length ? "; rerail_packs and rerail_repo_packs are ignored" : "";
-    console.log(`Rerail module: the base branch's .rerail/packs.json decides the packs${ignored}`);
+  if (listed === undefined) return [...e.packs, ...addRepoPacks(e.baseCheckout, e.repoPacks)];
+  if (e.packs.length > 0 || e.repoPacks.length > 0) {
+    console.log("Rerail module: rerail_packs and rerail_repo_packs replace the packs the base branch's .rerail/packs.json lists (--pack)");
+    const packs = [...e.packs, ...addRepoPacks(e.baseCheckout, e.repoPacks)];
+    checkPackOverride(e.home, packs);
+    return packs;
+  }
+  if (readsPacksFile(e.home)) {
+    console.log("Rerail module: the base branch's .rerail/packs.json decides the packs");
     approveListedPacks(e.baseCheckout, listed);
     return [];
   }
-  if (listed !== undefined) {
-    console.log("::notice::Rerail module: the base branch has .rerail/packs.json, but this Rerail doesn't read it (that needs a release with neralabs/rerail#736); the packs come from rerail_packs and rerail_repo_packs");
-  }
-  return [...e.packs, ...addRepoPacks(e.baseCheckout, e.repoPacks)];
+  console.log("::notice::Rerail module: the base branch has .rerail/packs.json, but this Rerail doesn't read it (that needs a release with neralabs/rerail#736), so only .rerail/rules/ runs; name packs in rerail_packs or rerail_repo_packs to run them");
+  return [];
 }
 
 /**

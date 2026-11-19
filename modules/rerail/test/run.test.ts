@@ -71,18 +71,27 @@ test("a repository pack path resolves only inside the base checkout", () => {
 
 /**
  * Logs every call; prints the fixture for a git-diff scan and one of its violations for the other scans. With
- * FAKE_READS_PACKS_FILE it reports the packs it ran, as a Rerail that reads `.rerail/packs.json` does.
+ * FAKE_READS_PACKS_FILE it reports the packs it ran, as a Rerail that reads `.rerail/packs.json` does (#736); with
+ * FAKE_REFUSES_PACK_WITH_FILE it also refuses --pack where the scanned tree has that file, as one before #829 does.
  */
 const FAKE_RERAIL = `
 const fs = require("node:fs");
 const args = process.argv.slice(2);
 fs.appendFileSync(process.env.FAKE_LOG, JSON.stringify({ cwd: process.cwd(), args, headless: process.env.RERAIL_EXPERIMENTAL_HEADLESS_SCAN ?? null }) + "\\n");
 if (args[0] !== "scan") process.exit(0);
+if (process.env.FAKE_REFUSES_PACK_WITH_FILE && args.includes("--pack") && fs.existsSync(".rerail/packs.json")) {
+  process.stderr.write("--pack: this repository lists its packs in .rerail/packs.json; add them there instead");
+  process.exit(1);
+}
 const head = JSON.parse(fs.readFileSync(${JSON.stringify(FIXTURE)}, "utf8"));
 const scope = args[args.indexOf("--scope") + 1];
 const packs = process.env.FAKE_READS_PACKS_FILE ? { packs: [] } : {};
 process.stdout.write(JSON.stringify({ ...(scope === "git-diff" ? head : { ...head, scope, violations: [head.violations[1]] }), ...packs }));
 `;
+
+/** A Rerail that reads `.rerail/packs.json` and takes --pack beside it (#829), and one that refuses it (#736 only). */
+const READS_FILE = { FAKE_READS_PACKS_FILE: "1" };
+const REFUSES_PACK = { FAKE_READS_PACKS_FILE: "1", FAKE_REFUSES_PACK_WITH_FILE: "1" };
 
 /**
  * A repository whose main has a pack and a rule, and a PR that renames the pack and adds its own pack and rule, laid
@@ -132,16 +141,12 @@ function workspace({ script = FAKE_RERAIL, packsFile }: { script?: string; packs
   return { root, env, bin, log: join(root, "calls.jsonl") };
 }
 
-function withFake<T>(bin: string, log: string, fn: () => T, readsPacksFile = false): T {
-  process.env.RERAIL_BIN = bin;
-  process.env.FAKE_LOG = log;
-  if (readsPacksFile) process.env.FAKE_READS_PACKS_FILE = "1";
+function withFake<T>(bin: string, log: string, fn: () => T, fakeEnv: Record<string, string> = {}): T {
+  Object.assign(process.env, { RERAIL_BIN: bin, FAKE_LOG: log, ...fakeEnv });
   try {
     return fn();
   } finally {
-    delete process.env.RERAIL_BIN;
-    delete process.env.FAKE_LOG;
-    delete process.env.FAKE_READS_PACKS_FILE;
+    for (const name of ["RERAIL_BIN", "FAKE_LOG", ...Object.keys(fakeEnv)]) delete process.env[name];
   }
 }
 
@@ -192,10 +197,10 @@ test("a pack only the PR has is not on the base branch: the module fails rather 
 /** Rerail's own pack from npm and a pack the repository keeps, as `.rerail/packs.json` lists them. */
 const LISTED = { packs: [{ id: "complexity", version: "0.1.8" }, { path: "packs/team" }] };
 
-test("with .rerail/packs.json on the base branch: no --pack, inputs ignored, and the base's listed path packs approved", () => {
+test("with .rerail/packs.json and both inputs empty, the file decides: no --pack, the base's listed path packs approved", () => {
   const { root, env, bin, log } = workspace({ packsFile: LISTED });
   try {
-    withFake(bin, log, () => scan(env), true);
+    withFake(bin, log, () => scan({ ...env, packs: [], repoPacks: [] }), READS_FILE);
     const all = calls(log);
     // Nothing is added. The PR's file also lists packs/pr-only; only the base's packs/team is approved, by the
     // listing Rerail reads from --repo under the headless-scan experiment.
@@ -206,7 +211,7 @@ test("with .rerail/packs.json on the base branch: no --pack, inputs ignored, and
         [["rules", "approve", "base-rule", "--repo", env.baseCheckout], null],
       ],
     );
-    // A probe of the installed Rerail, then the PR and the merge base, neither with --pack (env.packs is ignored).
+    // A probe of the installed Rerail, then the PR and the merge base, neither with --pack.
     const [, head, mergeBase, ...rest] = all.filter((c) => c.args[0] === "scan");
     assert.equal(rest.length, 0);
     assert.deepEqual(head!.args, ["scan", "--scope", "git-diff", "--base", env.mergeBase, "--rules-ref", env.baseSha, "--json"]);
@@ -223,7 +228,7 @@ test("a path the base's .rerail/packs.json lists must be a pack on the base bran
   ] as const) {
     const { root, env, bin, log } = workspace({ packsFile: { packs: [{ path }] } });
     try {
-      assert.throws(() => withFake(bin, log, () => scan(env), true), message, path);
+      assert.throws(() => withFake(bin, log, () => scan({ ...env, packs: [], repoPacks: [] }), READS_FILE), message, path);
       assert.deepEqual(calls(log).map((c) => c.args[0]), ["scan"], "nothing approved, only the probe ran");
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -231,16 +236,51 @@ test("a path the base's .rerail/packs.json lists must be a pack on the base bran
   }
 });
 
-test("with .rerail/packs.json but a Rerail that doesn't read it, the inputs and --pack decide as before", () => {
+test("with .rerail/packs.json and an input set, the inputs replace the file's packs with --pack", () => {
+  const { root, env, bin, log } = workspace({ packsFile: LISTED });
+  try {
+    withFake(bin, log, () => scan(env), READS_FILE);
+    const all = calls(log);
+    // rerail_repo_packs is added and approved from the base checkout, as without the file; the file's path packs
+    // are not approved.
+    assert.deepEqual(
+      all.filter((c) => c.args[0] !== "scan").map((c) => c.args),
+      [
+        ["packs", "add", join(realpathSync(env.baseCheckout), "packs", "team")],
+        ["rules", "approve", "@team/rerail-pack-team", "--repo", env.baseCheckout],
+        ["rules", "approve", "base-rule", "--repo", env.baseCheckout],
+      ],
+    );
+    // The probe asks whether this Rerail takes --pack beside the file; then the PR and the merge base, both with it.
+    const scans = all.filter((c) => c.args[0] === "scan");
+    assert.equal(scans.length, 3);
+    const packArgs = ["--pack", "typescript", "--pack", "team"];
+    assert.deepEqual(scans[0]!.args.slice(-5, -1), packArgs);
+    assert.notEqual(realpathSync(scans[0]!.cwd), realpathSync(env.checkout));
+    assert.deepEqual(scans[1]!.args.slice(5), ["--rules-ref", env.baseSha, ...packArgs, "--json"]);
+    assert.deepEqual(scans[2]!.args.slice(5), ["--rules-ref", env.baseSha, ...packArgs, "--json"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("with .rerail/packs.json and an input set, a Rerail that refuses --pack beside the file fails the module, naming the release", () => {
+  const { root, env, bin, log } = workspace({ packsFile: LISTED });
+  try {
+    assert.throws(() => withFake(bin, log, () => scan(env), REFUSES_PACK), /refuses --pack beside that file: that needs a Rerail release with neralabs\/rerail#829.*lists its packs in \.rerail\/packs\.json/);
+    // Only probes ran: the change was never scanned without the packs the inputs name.
+    const scans = calls(log).filter((c) => c.args[0] === "scan");
+    assert.ok(scans.every((c) => realpathSync(c.cwd) !== realpathSync(env.checkout)));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("with .rerail/packs.json, an input set and a Rerail that doesn't read the file, --pack decides as before", () => {
   const { root, env, bin, log } = workspace({ packsFile: LISTED });
   try {
     withFake(bin, log, () => scan(env));
-    const all = calls(log);
-    assert.deepEqual(
-      all.filter((c) => c.args[0] !== "scan").map((c) => c.args.slice(0, 3)),
-      [["packs", "add", join(realpathSync(env.baseCheckout), "packs", "team")], ["rules", "approve", "@team/rerail-pack-team"], ["rules", "approve", "base-rule"]],
-    );
-    const head = all.filter((c) => c.args[0] === "scan")[1]!;
+    const head = calls(log).filter((c) => c.args[0] === "scan")[1]!;
     assert.deepEqual(head.args.slice(5), ["--rules-ref", env.baseSha, "--pack", "typescript", "--pack", "team", "--json"]);
   } finally {
     rmSync(root, { recursive: true, force: true });

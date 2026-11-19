@@ -91,17 +91,21 @@ jobs:
         run: bash modules/rerail/install.sh
       - name: Test the rules against their cases
         run: packs/reviewer/test.sh
-      # The module (modules/rerail/run.ts) in repository mode: the packs .rerail/packs.json lists, with no --pack and
-      # packs/reviewer approved from this checkout. A Rerail that doesn't read that file (0.1.5 doesn't) gets
-      # packs/reviewer from RERAIL_REPO_PACKS instead, with --pack.
+      # The module (modules/rerail/run.ts) in repository mode, with rerail_packs and rerail_repo_packs empty, so the
+      # packs .rerail/packs.json lists decide: no --pack, packs/reviewer approved from this checkout. A Rerail that
+      # doesn't read that file (0.1.5 doesn't) would run no pack then, so it gets packs/reviewer as rerail_repo_packs.
       - name: Scan with the Rerail module
-        env:
-          RERAIL_REPO_PACKS: packs/reviewer
         run: |
           set -euo pipefail
           work="$RUNNER_TEMP/rerail-module"
           mkdir -p "$work/home" "$work/out"
           export RERAIL_HOME="$work/home/rerail-home"
+          # The module's own probe. The home comes first: run.ts runs main() when argv[1] is run.ts itself.
+          if ! node --input-type=module -e \
+            'const m = await import(process.argv[2]); process.exit(m.readsPacksFile(process.argv[1]) ? 0 : 1)' \
+            "$work/home" "$GITHUB_WORKSPACE/modules/rerail/run.ts"; then
+            export RERAIL_REPO_PACKS=packs/reviewer
+          fi
           head="$(git rev-parse HEAD)"
           MODULE_MODE=repository MODULE_CHECKOUT="$GITHUB_WORKSPACE" MODULE_BASE_CHECKOUT="$GITHUB_WORKSPACE" \
             MODULE_BASE_SHA="$head" MODULE_MERGE_BASE="$head" MODULE_HOME="$work/home" MODULE_OUT="$work/out" \
