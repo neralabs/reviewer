@@ -35,6 +35,14 @@ export function activeBotApprovals(reviews: readonly Review[], botLogin: string)
   return last?.state === "APPROVED" ? [last] : [];
 }
 
+/**
+ * The bot's change requests not yet dismissed. GitHub counts only the latest, but a superseded one still reads
+ * CHANGES_REQUESTED, so a clean review dismisses all of them rather than lean on which one GitHub counts.
+ */
+export function botChangeRequests(reviews: readonly Review[], botLogin: string): Review[] {
+  return reviews.filter((r) => r.user?.login === botLogin && r.state === "CHANGES_REQUESTED");
+}
+
 export interface ThreadComment {
   author: string;
   body: string;
