@@ -142,22 +142,7 @@ export async function post(s: Settings): Promise<void> {
   const ci = await ciAt(read, s.repo, pr.head.sha, await ownCheckSuite(read, s.repo));
   const dependency = await dependencyFor(read, prPath, pr.user.login, Boolean(gate.isFork), config, files);
 
-  const decided = decideVerdict({
-    findings: [...fresh, ...openPrior.map((p) => ({ level: p.level, path: p.path, needsRun: false }))],
-    ciState: ci.state,
-    changedPaths,
-    config,
-    isFork: Boolean(gate.isFork),
-    authorIsBot: pr.user.type === "Bot",
-    headCurrent: pr.head.sha === manifest.headSha,
-    approvalsEnabled: s.approvalsEnabled,
-    summaryOnly: manifest.summaryOnly,
-    dependency,
-  });
-
-  const problems: string[] = [];
-  const { verdict, notApprovedBecause } = decided;
-
+  // Escalation comes first: a review that asks a person to decide is not approved by the bot.
   const blockerPaths = [...fresh.filter((f) => f.level === "blocker"), ...openPrior.filter((p) => p.level === "blocker")].map((f) => f.path);
   const escalation = decideEscalation({
     riskLevel: model.risk.level,
@@ -169,6 +154,24 @@ export async function post(s: Settings): Promise<void> {
     author: pr.user.login,
     reviewedHead: reviews.filter((r) => r.commit_id === manifest.headSha && r.user && r.user.login !== s.botLogin).map((r) => r.user!.login),
   });
+
+  const decided = decideVerdict({
+    findings: [...fresh, ...openPrior.map((p) => ({ level: p.level, path: p.path, needsRun: false }))],
+    ciState: ci.state,
+    changedPaths,
+    config,
+    isFork: Boolean(gate.isFork),
+    authorIsBot: pr.user.type === "Bot",
+    headCurrent: pr.head.sha === manifest.headSha,
+    approvalsEnabled: s.approvalsEnabled,
+    summaryOnly: manifest.summaryOnly,
+    escalated: escalation.needed,
+    dependency,
+  });
+
+  const problems: string[] = [];
+  const { verdict, notApprovedBecause } = decided;
+
   const admins = escalation.needed && escalation.noCodeowners ? await repoAdmins(read, s.repo) : [];
   const escalationReason =
     model.escalate.reason || (model.risk.level === "high" ? `high risk: ${model.risk.reasons.join("; ")}` : "a blocker sits on an owned path");

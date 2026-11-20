@@ -14,6 +14,7 @@ const lowRisk: PolicyInput = {
   headCurrent: true,
   approvalsEnabled: true,
   summaryOnly: false,
+  escalated: false,
 };
 
 test("approves only when every low-risk rule holds", () => {
@@ -31,6 +32,7 @@ test("each failed low-risk rule turns an approval into a comment and says why", 
     [{ authorIsBot: true }, /bot/],
     [{ headCurrent: false }, /new commits/],
     [{ summaryOnly: true }, /too large/],
+    [{ escalated: true }, /asks a person to decide/],
     [{ config: { ...DEFAULT_CONFIG, error: "REVIEW.md reviewer block: bad" } }, /REVIEW\.md/],
   ];
   for (const [change, why] of variants) {
@@ -101,6 +103,17 @@ test("without CODEOWNERS, escalation is needed but has nobody to request", () =>
   assert.deepEqual(result, { needed: true, owners: [], paths: esc.changedPaths, noCodeowners: true });
 });
 
+test("high risk or a design question the model escalates holds back an approval the findings would allow", () => {
+  for (const change of [{ riskLevel: "high" as const }, { modelNeeded: true }, { modelNeeded: true, codeowners: undefined }]) {
+    const escalated = decideEscalation({ ...esc, ...change }).needed;
+    assert.deepEqual(decideVerdict({ ...lowRisk, escalated }), {
+      verdict: "comment",
+      notApprovedBecause: ["the review asks a person to decide (see the escalation)"],
+    }, JSON.stringify(change));
+  }
+  assert.equal(decideVerdict({ ...lowRisk, escalated: decideEscalation(esc).needed }).verdict, "approve");
+});
+
 // Dependency PRs (dependency.ts decides `applies` from GitHub data; here only its effect on the verdict).
 const depConfig = {
   ...DEFAULT_CONFIG,
@@ -125,6 +138,7 @@ test("the exemption lifts only those two rules", () => {
     [{ isFork: true }, /fork/],
     [{ approvalsEnabled: false }, /approvals are off/],
     [{ summaryOnly: true }, /too large/],
+    [{ escalated: true }, /asks a person to decide/],
   ];
   for (const [change, why] of variants) {
     const result = decideVerdict({ ...depPr, ...change });

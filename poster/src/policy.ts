@@ -1,6 +1,7 @@
 // The verdict policy (docs/architecture.md, "Verdict and approval policy"). The model reports findings and risk; the
 // verdict follows from the findings and the low-risk rules alone, so no blocker plus every rule holding means
-// approve. The model's risk level only drives escalation: anything that must stop a merge is a blocker.
+// approve. Anything that must stop a merge is a blocker. The model's risk level and its escalation don't stop a merge,
+// but they hold back the bot's approval: a review that asks a person to decide leaves the approval to that person.
 
 import { isHighRisk, type ReviewConfig } from "./review-config.ts";
 import type { CiState } from "./ci.ts";
@@ -31,6 +32,8 @@ export interface PolicyInput {
   approvalsEnabled: boolean;
   /** The review covered only a summary (large PR). */
   summaryOnly: boolean;
+  /** The review asks a person to decide: `decideEscalation`'s `needed`. */
+  escalated: boolean;
   /** Dependency PRs only (dependency.ts): lifts the high-risk and bot-author rules when every guard holds. */
   dependency?: { applies: boolean; failed: readonly string[] };
 }
@@ -74,6 +77,7 @@ export function decideVerdict(input: PolicyInput): PolicyResult {
     [exempt || !input.authorIsBot, "the PR was opened by a bot"],
     [input.headCurrent, "new commits landed while reviewing"],
     [!input.summaryOnly, "the PR was too large for a full review"],
+    [!input.escalated, "the review asks a person to decide (see the escalation)"],
   ];
   const notApprovedBecause = [...checks.filter(([ok]) => !ok).map(([, why]) => why), ...exemptionRefused(input.dependency)];
   return { verdict: notApprovedBecause.length === 0 ? "approve" : "comment", notApprovedBecause };

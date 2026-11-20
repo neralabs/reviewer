@@ -158,7 +158,7 @@ The skill reviews code, tests, behavioural config and workflows in full, checks 
 
 ## Verdict and approval policy
 
-The model reports findings, risk and escalation. The **poster derives the verdict** from them and the rules below (`poster/src/policy.ts`). The model has no verdict field, so it can neither hold back an approval its findings don't justify nor approve past them.
+The model reports findings, risk and escalation. The **poster derives the verdict** from them and the rules below (`poster/src/policy.ts`). The model has no verdict field, so it can't approve past its findings. The only way it holds back an approval its findings would allow is by escalating, and that also requests a person's review.
 
 | Condition | Posted review |
 |---|---|
@@ -173,7 +173,8 @@ The model reports findings, risk and escalation. The **poster derives the verdic
 - CI is green at the head SHA, not counting the reviewer's own run; no checks at all doesn't count as green;
 - the diff touches no high-risk path: `.github/`, `REVIEW.md` and `CODEOWNERS` always, plus those listed in `REVIEW.md`. Issue and pull request templates (`.github/ISSUE_TEMPLATE/`, `.github/PULL_REQUEST_TEMPLATE/`, `.github/pull_request_template.md`, `.github/PULL_REQUEST_TEMPLATE.md`) are outside the built-in `.github/` entry, since no workflow runs them; a repository that wants them high-risk lists them in `REVIEW.md`;
 - the PR isn't from a fork and isn't authored by a bot;
-- the head hasn't moved since the reviewed SHA, and the review wasn't summary-only.
+- the head hasn't moved since the reviewed SHA, and the review wasn't summary-only;
+- the review doesn't [escalate](#escalation): when it asks a person to decide (high risk, or a design question the model can't settle), the approval is left to that person.
 
 **Dependency PRs.** For a PR whose author is listed in `REVIEW.md` `dependencyUpdates.authors`, the poster checks deterministic guards (`poster/src/dependency.ts`). When all of them hold, the high-risk-path and bot-author rules are lifted and every other rule still applies:
 
@@ -189,7 +190,7 @@ The model reports findings, risk and escalation. The **poster derives the verdic
 
 On a PR the guards admit, a `needsRun` finding that is a follow-up or a nit and whose `knownGap` names a gap declared in `REVIEW.md` `dependencyUpdates.knownGaps` doesn't withhold approval. Those gaps are CI jobs that don't run for the bot's PRs (Dependabot runs get no OIDC token and only Dependabot secrets). The finding is still posted, marked with the gap. A `knownGap` that names no declared gap is dropped, and any other `needsRun` finding withholds approval as usual. The model chooses whether to mark `needsRun` at all, so letting it say that a finding only restates a gap gives it no new power. The gap ids come only from the base branch.
 
-When a PR isn't approved, the summary says which rules failed. The model's `risk.level` is not a rule; it drives escalation only. Anything that must stop a merge is a blocker. There is no size limit on approvals.
+When a PR isn't approved, the summary says which rules failed. The model's `risk.level` and `escalate` never stop a merge: anything that must is a blocker. They hold back the bot's approval through the escalation rule above. There is no size limit on approvals.
 
 If the settings block in `REVIEW.md` doesn't parse, approval is off and the summary says why.
 
@@ -202,6 +203,8 @@ The bot escalates when any of these holds:
 - a blocker sits on a path with an owner;
 - `risk.level` is `high`;
 - the model sets `escalate.needed`, for example when a finding needs a design decision.
+
+An escalated review is never an approval: with no blocker it is a `COMMENT`, and the summary says the review asks a person to decide. A dependency PR's exemption doesn't lift this.
 
 The poster resolves `CODEOWNERS` for the relevant paths (the last matching pattern wins, as on GitHub), requests those users and teams as reviewers, and mentions them in the summary with a one-line reason. It never requests the PR author, and never re-requests someone who has already reviewed the current head. It reads `CODEOWNERS` from `.github/`, the root or `docs/`, on the base branch. If there is none, it mentions the repository admins instead and flags the missing file as a follow-up.
 
