@@ -94,6 +94,11 @@ findings, and a verdict. Anyone who can read the pull request can read it. Model
 posted: it cannot mention people, load remote images, or forge the reviewer's state, and known credential formats are
 redacted ([poster/src/text.ts](../poster/src/text.ts)).
 
+The check workflow ([check.md](check.md)) posts a check on the pull request's head commit, as the same app: counts,
+the ids of the checks that found something, and each marked finding's path, lines and message, with known credential
+formats redacted. No model is involved. Its `reviewer-check-modules` artifact holds the modules' results and raw
+output for 3 days.
+
 ## Controlling it
 
 - Choose the provider and model, and scope the key to invoking that model only.

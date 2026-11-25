@@ -1,7 +1,7 @@
 // CLI steps for the modules, the rules pass and the results sink. None of them needs npm dependencies: they run in
 // jobs that install none.
 //
-//   modules                 modules job: run REVIEWER_MODULES (diff mode for a review, repository mode for a scan)
+//   modules                 modules job: run REVIEWER_MODULES (diff mode for a pull request, repository mode for a scan)
 //   rules-pass-prepare      rules-pass job, before the model: its inputs, outside the first pass's reach
 //   send <kind>             send job: the modules' sink records to RESULTS_SINK_URL
 
@@ -24,14 +24,18 @@ function readGate(work: string): Decision {
   return JSON.parse(readFileSync(join(work, "gate.json"), "utf8")) as Decision;
 }
 
-/** Never fails the job: every module's outcome, failures included, is in its results.json. */
+/**
+ * Never fails the job: every module's outcome, failures included, is in its results.json. `head_sha` is the commit
+ * the modules checked, which the check workflow reports on.
+ */
 export function modulesCommand(s: Settings): void {
   const gate = readGate(s.work);
   const mode = gate.mode === "scan" ? "repository" : "diff";
-  const results = runModules(listEnv("REVIEWER_MODULES"), moduleTarget(s.work, mode, gate.baseRef), { home: s.home, work: s.work });
+  const target = moduleTarget(s.work, mode, gate.baseRef);
+  const results = runModules(listEnv("REVIEWER_MODULES"), target, { home: s.home, work: s.work });
   appendSummary(`### Modules (${mode} mode)\n\n${describeResults(results) || "none"}`);
   const fresh = results.flatMap((r) => r.findings.filter((f) => f.state === "new"));
-  setOutputs({ new_findings: fresh.length });
+  setOutputs({ new_findings: fresh.length, head_sha: target.headSha });
 }
 
 /**

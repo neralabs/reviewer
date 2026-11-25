@@ -19,7 +19,7 @@
     {
       "id": "reviewer-github-writes-in-post",
       "document": "rules/reviewer-github-writes-in-post.json",
-      "title": "Write to GitHub only from post and respond",
+      "title": "Write to GitHub only from post, respond and check",
       "group": "GitHub and credentials",
       "examples": {
         "caught": {

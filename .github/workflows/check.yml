@@ -1,0 +1,187 @@
+# Reusable workflow: the modules (docs/modules.md) as a GitHub check on every pull request, with no model and no
+# review. scan -> check: the modules check the pull request's head, and each module's result becomes one check run,
+# passed or failed by the caller's rule. See docs/check.md.
+#
+# Separate from review.yml, which runs only when someone asks for a review: a required check has to report on every
+# pull request and every push. A caller adds this beside its other checks (templates/check-caller.yml), on
+# pull_request_target only, which runs the caller from the base branch, so a pull request can't change the rule it
+# is checked by. Nothing from the pull request is run: the modules read it as data, with their rules from the base
+# branch.
+#
+# Credentials, by job:
+#   scan     GITHUB_TOKEN (contents: read) for the checkouts. Each module's own inputs; for Rerail,
+#            RERAIL_PACKAGE_URL, and RESULTS_SINK_URL/TOKEN in its install only (rerail_package remote:<v>).
+#            No app key, though this is the job that reads the pull request.
+#   check    a neralabs-reviewer token with checks:write on the calling repo, and nothing else. It gets the
+#            reviewer's source as the scan job had it before the pull request was checked out, and the modules'
+#            results, which it checks against the module contract before it uses them.
+name: reviewer-check
+
+on:
+  workflow_call:
+    inputs:
+      app_client_id:
+        description: neralabs-reviewer client ID (vars.REVIEWER_APP_CLIENT_ID). The app needs the Checks read and write permission.
+        required: true
+        type: string
+      reviewer_ref:
+        description: Ref of neralabs/reviewer to load the poster and the modules from. Keep it equal to the @ref in `uses:`.
+        required: false
+        type: string
+        default: main
+      modules:
+        description: The modules to check with, space-separated module ids (docs/modules.md), e.g. `rerail`. Each gets its own check run, named by its id.
+        required: true
+        type: string
+      rule:
+        description: When a check passes. `no-new` - the change adds no error or warning. `not-more` - the files the change touches have no more errors and warnings than on the merge base. `zero` - the files the change touches have no error or warning. Notes never count.
+        required: false
+        type: string
+        default: no-new
+      rerail_package:
+        description: Rerail module. What `npm install --global` installs Rerail from (an npm spec or a tarball URL), or `remote:<version>` to download it from the results sink. Empty installs the Rerail release the reviewer pins and tests the module with (modules/rerail/pin/package.json). The secret RERAIL_PACKAGE_URL, when set, is used instead.
+        required: false
+        type: string
+        default: ""
+      rerail_packs:
+        description: Rerail module. Rule packs to check with besides `.rerail/rules/`, space-separated pack ids. When the base branch has `.rerail/packs.json`, its packs run while this and rerail_repo_packs are both empty; set, they replace the file's packs (docs/rerail.md).
+        required: false
+        type: string
+        default: ""
+      rerail_repo_packs:
+        description: Rerail module. Rule packs that live in this repository, space-separated paths from its root (e.g. `packs/team`), taken from the base branch only and approved there. When the base branch has `.rerail/packs.json`, its packs run while this and rerail_packs are both empty; set, they replace the file's packs (docs/rerail.md).
+        required: false
+        type: string
+        default: ""
+    secrets:
+      REVIEWER_APP_PRIVATE_KEY:
+        description: Private key of the GitHub App the check is posted as
+        required: true
+      RERAIL_PACKAGE_URL:
+        description: Rerail module. Where to install Rerail from, when it must not appear in a public file. Overrides rerail_package.
+        required: false
+      RESULTS_SINK_URL:
+        description: Rerail module, only with rerail_package remote:<version>. Base URL of the results sink Rerail is downloaded from.
+        required: false
+      RESULTS_SINK_TOKEN:
+        description: Bearer token for RESULTS_SINK_URL.
+        required: false
+
+permissions: {}
+
+env:
+  REVIEWER_WORK: work
+  REVIEWER_HOME: reviewer
+  NODE_VERSION: "24"
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # A newer push to the same pull request supersedes this one.
+    concurrency:
+      group: reviewer-check-${{ github.repository }}-${{ github.event.pull_request.number || github.run_id }}
+      cancel-in-progress: true
+    permissions:
+      contents: read
+    outputs:
+      head_sha: ${{ steps.modules.outputs.head_sha }}
+    steps:
+      # The reviewer's own source, at the ref the caller pinned. Public, so no app token.
+      - uses: actions/checkout@v7
+        with:
+          repository: neralabs/reviewer
+          ref: ${{ inputs.reviewer_ref }}
+          path: reviewer
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      # Fails on any event but pull_request_target: a caller that quietly did nothing would leave a required check
+      # waiting for ever.
+      - name: Gate
+        run: node reviewer/poster/src/cli.ts check-gate
+
+      # Before the pull request is checked out: the check job, which holds the app token, runs this source and
+      # nothing that was on disk beside the pull request's files.
+      - name: Hand the source to the check job
+        uses: actions/upload-artifact@v7
+        with:
+          name: reviewer-check-bundle
+          path: |
+            reviewer/
+            work/gate.json
+          retention-days: 3
+          if-no-files-found: error
+
+      # Data only: modules read the files, they don't run them. Config comes from the base branch (work/base-tip).
+      - name: Check out the PR head
+        uses: actions/checkout@v7
+        with:
+          ref: refs/pull/${{ github.event.pull_request.number }}/head
+          path: work/pr
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Run the modules
+        id: modules
+        env:
+          REVIEWER_MODULES: ${{ inputs.modules }}
+          RERAIL_PACKAGE: ${{ inputs.rerail_package }}
+          RERAIL_PACKAGE_URL: ${{ secrets.RERAIL_PACKAGE_URL }}
+          RERAIL_PACKS: ${{ inputs.rerail_packs }}
+          RERAIL_REPO_PACKS: ${{ inputs.rerail_repo_packs }}
+          # Only to download Rerail for rerail_package remote:<version>; the module drops them after its install.
+          RESULTS_SINK_URL: ${{ startsWith(inputs.rerail_package, 'remote:') && secrets.RESULTS_SINK_URL || '' }}
+          RESULTS_SINK_TOKEN: ${{ startsWith(inputs.rerail_package, 'remote:') && secrets.RESULTS_SINK_TOKEN || '' }}
+        run: node reviewer/poster/src/cli.ts modules
+
+      - name: Hand the results on
+        uses: actions/upload-artifact@v7
+        with:
+          name: reviewer-check-modules
+          path: |
+            work/modules/
+            !work/modules/*/home/
+          retention-days: 3
+          if-no-files-found: error
+
+  # One check run per module on the commit the scan job checked out. The job succeeds whatever the checks conclude:
+  # the check runs carry the result.
+  check:
+    needs: scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Mint the neralabs-reviewer token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ inputs.app_client_id }}
+          private-key: ${{ secrets.REVIEWER_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-checks: write
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: reviewer-check-bundle
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: reviewer-check-modules
+          path: work/modules
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Post the checks
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          REVIEWER_CHECK_RULE: ${{ inputs.rule }}
+          REVIEWER_CHECK_SHA: ${{ needs.scan.outputs.head_sha }}
+        run: node reviewer/poster/src/cli.ts check

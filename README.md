@@ -12,6 +12,7 @@ Pull request review by Claude Code, run in GitHub Actions when someone asks for 
 - Escalates to the code owners in `CODEOWNERS` when a change needs a human: a blocker on an owned path, high risk, or a design question. An escalated PR is left for them to approve.
 - Re-reviews only the new commits when asked again, resolves the threads of fixed findings, and takes feedback on its findings.
 - Optionally runs deterministic [modules](docs/modules.md) beside the review, such as a repository's [Rerail](docs/rerail.md) rules. A second, smaller rules pass turns their new findings into labelled recommendations. A new breach of an enforced rule is a blocker. The first review never sees module output. On a schedule, the same modules scan the whole branch.
+- Optionally posts the same modules' results as a GitHub check on every pull request, with no model: a second workflow, [the check workflow](docs/check.md), which a ruleset can require.
 
 The bot posts as a GitHub App you create. This repository's examples use the app `neralabs-reviewer` (handle `@neralabs-reviewer`) and the team `@neralabs/reviewer`.
 
@@ -38,6 +39,7 @@ These steps set the reviewer up for your organization. Replace `<org>` with your
 1. **Create a GitHub App** in your organization (Settings → Developer settings → GitHub Apps). Permissions:
    - Repository: **Pull requests** read and write, **Contents** read, **Metadata** read. If the bot's approvals should count toward required reviews, give it **Contents** read and write instead: GitHub counts an approval only from an account that can write to the repository. The workflow's tokens ask for read access to contents either way.
    - Organization: **Members** read. GitHub ignores an app's changes to team review requests without it.
+   - For [the check workflow](docs/check.md) only: Repository **Checks** read and write.
    - No webhook: clear "Active" under Webhook.
 
    Generate a private key. Note the app's client ID.
@@ -80,6 +82,7 @@ Commands addressed to the team (`@<org>/<team_slug> review`) work like commands 
 
 ```
 .github/workflows/review.yml   reusable workflow: gate, modules, review, rules-pass, post, send, respond, report-failure
+.github/workflows/check.yml    reusable workflow: the modules as a GitHub check on every pull request (scan, check)
 modules/                       deterministic checks beside the review (modules/rerail/: Rerail rules)
 skill/review/SKILL.md          multi-agent review skill
 skill/review/team-context.md   review bar shared by every target repository
@@ -90,12 +93,13 @@ prompts/rules-pass.md          the rules pass over the modules' new findings
 schema/findings.schema.json    contract between the review job and the poster
 schema/module-results.schema.json  what a module returns
 schema/rules-pass.schema.json  what the rules pass returns
-poster/                        gate, context preparation, posting (TypeScript run directly by Node 24)
+poster/                        gate, context preparation, posting, the check (TypeScript run directly by Node 24)
 scripts/run-claude.sh          the locked-down claude -p invocation
 infra/bedrock.yml              CloudFormation example: a scoped Bedrock key user and a monthly budget
 templates/caller.yml           caller workflow that target repositories copy
+templates/check-caller.yml     caller for the check workflow
 templates/REVIEW.md            REVIEW.md template
-docs/                          architecture, security model, configuration, privacy, versioning, modules, Rerail
+docs/                          architecture, security model, configuration, privacy, versioning, modules, Rerail, check
 ```
 
 ## Contributing

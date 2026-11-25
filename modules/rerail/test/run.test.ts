@@ -35,8 +35,12 @@ test("a scan becomes a module result: rule modes map to levels, and the merge ba
       ["rerail", "prefer-const", "note", "new"],
     ],
   );
-  const repo = toResult(load(FIXTURE), "repository", new Set()) as { findings: { state: string }[] };
+  const repo = toResult(load(FIXTURE), "repository", new Set(), { error: 1, warning: 0, note: 0 }) as { findings: { state: string }[]; baseline?: object };
   assert.ok(repo.findings.every((f) => f.state === "existing"));
+  // The merge base's counts go with a diff only: a branch scanned whole has no base to compare with.
+  assert.equal(repo.baseline, undefined);
+  const diff = toResult(load(FIXTURE), "diff", new Set(), { error: 1, warning: 0, note: 0 }) as { baseline?: object };
+  assert.deepEqual(diff.baseline, { error: 1, warning: 0, note: 0 });
 });
 
 test("a repository pack path resolves only inside the base checkout", () => {
@@ -70,9 +74,10 @@ test("a repository pack path resolves only inside the base checkout", () => {
 });
 
 /**
- * Logs every call; prints the fixture for a git-diff scan and one of its violations for the other scans. With
- * FAKE_READS_PACKS_FILE it reports the packs it ran, as a Rerail that reads `.rerail/packs.json` does (#736); with
- * FAKE_REFUSES_PACK_WITH_FILE it also refuses --pack where the scanned tree has that file, as one before #829 does.
+ * Logs every call; prints the fixture for a git-diff scan (with FAKE_HEAD_CLEAN, the fixture with no violations) and
+ * one of its violations for the other scans. With FAKE_READS_PACKS_FILE it reports the packs it ran, as a Rerail that
+ * reads `.rerail/packs.json` does (#736); with FAKE_REFUSES_PACK_WITH_FILE it also refuses --pack where the scanned
+ * tree has that file, as one before #829 does.
  */
 const FAKE_RERAIL = `
 const fs = require("node:fs");
@@ -86,7 +91,8 @@ if (process.env.FAKE_REFUSES_PACK_WITH_FILE && args.includes("--pack") && fs.exi
 const head = JSON.parse(fs.readFileSync(${JSON.stringify(FIXTURE)}, "utf8"));
 const scope = args[args.indexOf("--scope") + 1];
 const packs = process.env.FAKE_READS_PACKS_FILE ? { packs: [] } : {};
-process.stdout.write(JSON.stringify({ ...(scope === "git-diff" ? head : { ...head, scope, violations: [head.violations[1]] }), ...packs }));
+const found = scope !== "git-diff" ? [head.violations[1]] : process.env.FAKE_HEAD_CLEAN ? [] : head.violations;
+process.stdout.write(JSON.stringify({ ...head, ...(scope === "git-diff" ? {} : { scope }), violations: found, ...packs }));
 `;
 
 /** A Rerail that reads `.rerail/packs.json` and takes --pack beside it (#829), and one that refuses it (#736 only). */
@@ -152,7 +158,7 @@ function withFake<T>(bin: string, log: string, fn: () => T, fakeEnv: Record<stri
 
 const calls = (log: string) => readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l) as { cwd: string; args: string[]; headless: string | null });
 
-test("diff mode: approval only from the base checkout, the PR scanned with the base's rules, the merge base for the same files", () => {
+test("diff mode: approval only from the base checkout, the PR scanned with the base's rules, the merge base for the files it touches", () => {
   const { root, env, bin, log } = workspace();
   try {
     withFake(bin, log, () => scan(env));
@@ -173,13 +179,36 @@ test("diff mode: approval only from the base checkout, the PR scanned with the b
     assert.deepEqual(head!.args, ["scan", "--scope", "git-diff", "--base", env.mergeBase, "--rules-ref", env.baseSha, "--pack", "typescript", "--pack", "team", "--json"]);
     assert.equal(realpathSync(head!.cwd), realpathSync(env.checkout));
     assert.deepEqual(mergeBase!.args.slice(0, 4), ["scan", "--scope", "repository", "--paths-from"]);
-    assert.equal(readFileSync(mergeBase!.args[4]!, "utf8"), "src/log.ts\n"); // src/db.ts is new in the PR
+    // What the PR changed that the base has, then the file the head scan found a violation in. src/db.ts is new.
+    assert.equal(readFileSync(mergeBase!.args[4]!, "utf8"), "packs/team/pack.json\nsrc/log.ts\n");
 
-    const result = JSON.parse(readFileSync(join(env.out, "results.json"), "utf8")) as { status: string; findings: { fingerprint: string; state: string }[] };
+    const result = JSON.parse(readFileSync(join(env.out, "results.json"), "utf8")) as { status: string; findings: { fingerprint: string; state: string }[]; baseline: object };
     assert.equal(result.status, "completed");
     assert.deepEqual(result.findings.map((f) => [f.fingerprint, f.state]), [["fp-sql-new", "new"], ["fp-console-old", "existing"], ["fp-const-new", "new"]]);
+    // The fake's merge-base scan finds one violation of a steer rule.
+    assert.deepEqual(result.baseline, { error: 0, warning: 1, note: 0 });
     const sink = JSON.parse(readFileSync(join(env.out, "sink.json"), "utf8")) as { type: string; id: string }[];
     assert.deepEqual(sink.map((r) => [r.type, r.id]), [["scan", load(FIXTURE).scanId]]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the merge base is scanned even when the PR's files are clean, so what it fixed or deleted still counts", () => {
+  const { root, env, bin, log } = workspace();
+  try {
+    rmSync(join(env.checkout, "packs", "team", "package.json"));
+    for (const args of [["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-qm", "delete a file"]]) {
+      execFileSync("git", args, { cwd: env.checkout });
+    }
+    withFake(bin, log, () => scan(env), { FAKE_HEAD_CLEAN: "1" });
+    const mergeBase = calls(log).filter((c) => c.args[0] === "scan")[1]!;
+    // The file the PR changed and the one it deleted; the base has neither of the files the PR added.
+    assert.equal(readFileSync(mergeBase.args[4]!, "utf8"), "packs/team/pack.json\npacks/team/package.json\n");
+    const result = JSON.parse(readFileSync(join(env.out, "results.json"), "utf8")) as { status: string; findings: object[]; baseline: object };
+    assert.equal(result.status, "completed");
+    assert.deepEqual(result.findings, []);
+    assert.deepEqual(result.baseline, { error: 0, warning: 1, note: 0 });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -19,6 +19,10 @@
     {
       "path": "poster/src/diff.ts",
       "content": "const { execFileSync } = await import(\"node:child_process\");\n"
+    },
+    {
+      "path": "poster/src/check-policy.ts",
+      "content": "export const rule = process.env.REVIEWER_CHECK_RULE ?? \"no-new\";\n"
     }
   ],
   "passed": [

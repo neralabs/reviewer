@@ -29,6 +29,7 @@
       "poster/src/render.ts",
       "poster/src/review-config.ts",
       "poster/src/gate.ts",
+      "poster/src/check-policy.ts",
       "**/node_modules/**"
     ]
   },

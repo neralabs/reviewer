@@ -33,6 +33,7 @@ test("modules run in diff mode against the base tip; a failing or unknown module
     const target = moduleTarget(work, "diff", "main");
     assert.equal(target.baseSha, base);
     assert.equal(target.mergeBase, base);
+    assert.equal(target.headSha, execFileSync("git", ["rev-parse", "HEAD"], { cwd: join(work, "pr"), encoding: "utf8" }).trim());
     assert.ok(existsSync(join(target.baseCheckout, "old.ts")) && !existsSync(join(target.baseCheckout, "new.ts")), "base-tip is the base branch");
 
     const results = runModules(["todo", "broken", "nope", "Bad!", "todo"], target, { home: HOME, work });
@@ -96,6 +97,9 @@ test("a module's result must keep to the contract, or the whole result counts as
     ["not json", /not JSON/],
     [result([], { schema: "other/1" }), /is not reviewer.module-results\/1/],
     [result([], { module: "other" }), /is for other in diff mode/],
+    [result([], { baseline: { error: 1, warning: -1, note: 0 } }), /baseline is not a count/],
+    [result([], { baseline: { error: 1 } }), /baseline is not a count/],
+    [result([], { baseline: 3 }), /baseline is not a count/],
     [result([], { mode: "repository" }), /is for m in repository mode/],
     [result([], { status: "failed", error: "it broke" }), /it broke/],
     [result([], { checks: [{ id: "has space", level: "warning" }] }), /plain id/],
@@ -115,9 +119,14 @@ test("a module's result must keep to the contract, or the whole result counts as
   }
 });
 
-test("repository mode marks everything existing, whatever the module said", () => {
-  const parsed = parseModuleResult(result([finding()], { mode: "repository" }), "m", "repository");
+test("repository mode marks everything existing and has no merge base to count, whatever the module said", () => {
+  const baseline = { error: 2, warning: 1, note: 0 };
+  const parsed = parseModuleResult(result([finding()], { mode: "repository", baseline }), "m", "repository");
   assert.equal(parsed.findings[0]!.state, "existing");
+  assert.equal(parsed.baseline, undefined);
+  // In diff mode the counts are kept, and only the counts.
+  assert.deepEqual(parseModuleResult(result([], { baseline: { ...baseline, extra: "x" } }), "m", "diff").baseline, baseline);
+  assert.equal(parseModuleResult(result([]), "m", "diff").baseline, undefined);
 });
 
 test("end is exclusive: a range ending at column 1 stops on the line before", () => {
@@ -142,7 +151,8 @@ test("checked module results, from the example module and from Rerail's, match s
     assert.ok(validate(todo), JSON.stringify(validate.errors));
     const { toResult, parseScan } = await import("../../modules/rerail/run.ts");
     const scan = parseScan(readFileSync(new URL("../../modules/rerail/test/fixtures/c3-scan-rerail.json", import.meta.url), "utf8"));
-    const rerail = parseModuleResult(JSON.stringify(toResult(scan, "diff", new Set())), "rerail", "diff");
+    const rerail = parseModuleResult(JSON.stringify(toResult(scan, "diff", new Set(), { error: 0, warning: 3, note: 1 })), "rerail", "diff");
+    assert.deepEqual(rerail.baseline, { error: 0, warning: 3, note: 1 });
     assert.equal(rerail.status, "completed", rerail.error ?? "");
     assert.ok(validate(rerail), JSON.stringify(validate.errors));
     assert.ok(validate(parseModuleResult("nope", "m", "diff")), "a failed result is valid too");

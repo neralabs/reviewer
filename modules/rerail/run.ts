@@ -275,23 +275,45 @@ export function envFrom(env: NodeJS.ProcessEnv): Env {
   };
 }
 
-/** Fingerprints of head violations also found on the merge base, for the files they are in. */
-function existingOnBase(e: Env, head: ScanResult, rulesArgs: string[]): Set<string> {
+/** How many violations of each level the merge base has in the files the change touches. */
+export type Baseline = Record<Level, number>;
+
+/** Every path the change touches: added, changed or deleted, and both names of a renamed file. */
+function changedPaths(e: Env): string[] {
+  const names = execFileSync("git", ["diff", "--name-only", "--no-renames", "-z", e.mergeBase, "HEAD"], { cwd: e.checkout, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  return names.split("\u0000").filter(Boolean);
+}
+
+/**
+ * The merge base scanned with the same rules, for the files the change touches that the base has: the ones it
+ * changed, deleted or renamed away. Undefined when the base has none of them, so there is nothing to scan.
+ */
+function scanMergeBase(e: Env, head: ScanResult, rulesArgs: string[]): ScanResult | undefined {
   const baseDir = resolve(e.home, "merge-base");
   if (!existsSync(baseDir)) git(e.checkout, ["worktree", "add", "--quiet", "--detach", "--force", baseDir, e.mergeBase]);
-  // A file the change added isn't on the base; scan only what exists there.
-  const paths = [...new Set(head.violations.map((v) => v.path))].filter((p) => existsSync(join(baseDir, p)));
-  if (!paths.length) return new Set();
+  const touched = [...new Set([...changedPaths(e), ...head.violations.map((v) => v.path)])];
+  // A file the change added isn't on the base; scan only what exists there. A name with a line break is left out:
+  // the list file below has one path a line, so it would read as other paths, which the change doesn't touch.
+  const paths = touched.filter((p) => !/[\u0000-\u001f]/.test(p) && existsSync(join(baseDir, p)));
+  if (!paths.length) return undefined;
   const listFile = join(e.home, "base-paths.txt");
   writeFileSync(listFile, `${paths.join("\n")}\n`);
   const base = runScan(baseDir, ["--scope", "repository", "--paths-from", listFile, ...rulesArgs]);
   writeFileSync(join(e.out, "raw", "base-scan.json"), `${JSON.stringify(base, null, 2)}\n`);
   if (base.status !== "completed") throw new Error("the merge-base scan failed, so new can't be told from existing");
-  return new Set(base.violations.map((v) => v.fingerprint));
+  return base;
 }
 
-/** The module result for a scan, every violation marked new unless the merge base had it too. */
-export function toResult(scan: ScanResult, mode: Env["mode"], existing: ReadonlySet<string>): object {
+export function baselineOf(base: ScanResult | undefined): Baseline {
+  const count = (level: Level) => (base?.violations ?? []).filter((v) => (LEVEL[v.mode] ?? "note") === level).length;
+  return { error: count("error"), warning: count("warning"), note: count("note") };
+}
+
+/**
+ * The module result for a scan, every violation marked new unless the merge base had it too. In diff mode
+ * `baseline` is what the merge base had in the same files, for a check that compares the two (docs/check.md).
+ */
+export function toResult(scan: ScanResult, mode: Env["mode"], existing: ReadonlySet<string>, baseline?: Baseline): object {
   return {
     schema: "reviewer.module-results/1",
     module: "rerail",
@@ -310,6 +332,7 @@ export function toResult(scan: ScanResult, mode: Env["mode"], existing: Readonly
       fingerprint: v.fingerprint,
       state: mode === "diff" && !existing.has(v.fingerprint) ? "new" : "existing",
     })),
+    ...(mode === "diff" && baseline ? { baseline } : {}),
   };
 }
 
@@ -323,8 +346,10 @@ export function scan(e: Env): void {
   // The results sink stores the scan as Rerail produced it.
   writeFileSync(join(e.out, "sink.json"), `${JSON.stringify([{ ...head, type: "scan", id: head.scanId }])}\n`);
   if (head.status !== "completed") throw new Error(head.failures.map((f) => f.message).join("; ") || "the scan failed");
-  const existing = e.mode === "diff" && head.violations.length ? existingOnBase(e, head, rulesArgs) : new Set<string>();
-  writeFileSync(join(e.out, "results.json"), `${JSON.stringify(toResult(head, e.mode, existing), null, 2)}\n`);
+  const base = e.mode === "diff" ? scanMergeBase(e, head, rulesArgs) : undefined;
+  const existing = new Set(base?.violations.map((v) => v.fingerprint));
+  const baseline = e.mode === "diff" ? baselineOf(base) : undefined;
+  writeFileSync(join(e.out, "results.json"), `${JSON.stringify(toResult(head, e.mode, existing, baseline), null, 2)}\n`);
 }
 
 function main(): void {

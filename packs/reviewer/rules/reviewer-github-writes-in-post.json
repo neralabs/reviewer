@@ -3,7 +3,7 @@
   "id": "reviewer-github-writes-in-post",
   "revision": 1,
   "mode": "steer",
-  "description": "Write to GitHub only from post.ts and respond.ts, the commands that hold the app token; every other module reads with the read-only token.",
+  "description": "Write to GitHub only from post.ts, respond.ts and check.ts, the commands that hold an app token; every other module reads with the read-only token.",
   "scope": {
     "include": [
       "poster/src/**/*.ts",
@@ -13,7 +13,8 @@
     "exclude": [
       "poster/src/github.ts",
       "poster/src/post.ts",
-      "poster/src/respond.ts"
+      "poster/src/respond.ts",
+      "poster/src/check.ts"
     ]
   },
   "clauses": [
@@ -52,7 +53,7 @@
       "violation": {
         "code": "GITHUB_WRITE_OUTSIDE_POST",
         "anchor": "witness.span",
-        "message": "Move this write into post.ts or respond.ts, which take the app token; this code runs where only the read-only GITHUB_TOKEN may be."
+        "message": "Move this write into post.ts or respond.ts (or check.ts, for a check run), which take the app token; this code runs where only the read-only GITHUB_TOKEN may be."
       }
     },
     {
@@ -108,7 +109,7 @@
       "violation": {
         "code": "APP_TOKEN_OUTSIDE_POST",
         "anchor": "witness.span",
-        "message": "Read APP_TOKEN only in post.ts or respond.ts; other commands get the read-only GITHUB_TOKEN."
+        "message": "Read APP_TOKEN only in post.ts, respond.ts or check.ts; other commands get the read-only GITHUB_TOKEN."
       }
     }
   ]

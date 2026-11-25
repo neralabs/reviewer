@@ -87,10 +87,11 @@ In **diff mode** (a pull request):
    when they decide. With `--rules-ref`, the rules, the packs file and the `path` packs it lists come from the base
    branch, so a pull request can't change the rules it is judged by. Approvals are bound to content, so a pack or rule
    the pull request adds or edits runs unapproved, in `log`.
-3. **New or existing.** For the files that have violations, it scans the merge base with the same rules
-   (`--paths-from`). It marks each violation **new**, or **existing** if the merge base has one with the same
-   fingerprint. The fingerprint is a hash of rule, path and matched text, so a violation that only moved lines still
-   matches.
+3. **New or existing.** It scans the merge base with the same rules, for the files the pull request touches that the
+   base has (`--paths-from`): the ones it changed, deleted or renamed away. It marks each violation **new**, or
+   **existing** if the merge base has one with the same fingerprint. The fingerprint is a hash of rule, path and
+   matched text, so a violation that only moved lines still matches. The merge base's violations are also counted by
+   level, as the result's `baseline`, which the [check workflow](check.md)'s `not-more` rule compares with.
 4. **The result.** It writes the module result. Rule modes map to levels: `block` → `error`, `steer` → `warning`,
    `log` → `note`. Rerail's own result goes to `raw/scan.json`, and to `sink.json` as a `scan` record for the results
    sink.
@@ -120,7 +121,7 @@ The rules pass sees only new findings. A new `error` or `warning` (a `block` or 
 
 ## Cost
 
-Two scans per pull request: the change, then the merge base for the files with violations. With `.rerail/packs.json`,
+Two scans per pull request: the change, then the merge base for the files the change touches. With `.rerail/packs.json`,
 one or two more, of an empty repository, to find out what the installed Rerail does with the file. When the file
 decides, each scan fetches its published packs from npm (npm's cache first). On a repository the size of Rerail, this
 took a few seconds locally.
