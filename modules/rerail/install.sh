@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Rerail module: installs Rerail, then adds the caller's rule packs (by id).
 #
+#   RERAIL_IMAGE         the rerail_image input: the image the modules job runs in, with Rerail installed already, so
+#                        nothing is installed; set beside RERAIL_PACKAGE or RERAIL_PACKAGE_URL, it is an error
 #   RERAIL_PACKAGE_URL   secret; when set, installed from as is (npm spec or tarball URL), ahead of RERAIL_PACKAGE
 #   RERAIL_PACKAGE       the rerail_package input: an npm spec, a tarball URL, or remote:<version>; when empty, the
 #                        release pin/package.json pins, which the module is tested with
@@ -13,6 +15,27 @@
 # before npm runs.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
+
+add_packs() {
+  for pack in ${RERAIL_PACKS:-}; do
+    rerail packs add "$pack"
+  done
+}
+
+if [ -n "${RERAIL_IMAGE:-}" ]; then
+  if [ -n "${RERAIL_PACKAGE:-}" ] || [ -n "${RERAIL_PACKAGE_URL:-}" ]; then
+    echo "::error::rerail_image runs the Rerail its image holds: leave rerail_package and RERAIL_PACKAGE_URL empty"
+    exit 1
+  fi
+  if ! command -v rerail > /dev/null; then
+    echo "::error::rerail_image ${RERAIL_IMAGE} has no rerail on its PATH"
+    exit 1
+  fi
+  echo "Rerail module: Rerail from the image ${RERAIL_IMAGE}"
+  rerail --version
+  add_packs
+  exit 0
+fi
 
 source="${RERAIL_PACKAGE_URL:-${RERAIL_PACKAGE:-}}"
 if [ -z "$source" ]; then
@@ -60,6 +83,4 @@ unset RESULTS_SINK_URL RESULTS_SINK_TOKEN RERAIL_PACKAGE_URL
 # Scripts stay on: Rerail's postinstall places its native engine.
 npm install --global "$source"
 rerail --version
-for pack in ${RERAIL_PACKS:-}; do
-  rerail packs add "$pack"
-done
+add_packs

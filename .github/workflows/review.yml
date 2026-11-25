@@ -17,7 +17,8 @@
 #            on the calling repo.
 #   modules  GITHUB_TOKEN (contents: read) for the checkout. Each module's own inputs; for Rerail,
 #            RERAIL_PACKAGE_URL, and RESULTS_SINK_URL/TOKEN in its install only (rerail_package remote:<v>).
-#            No model key. Runs in parallel with review, which never sees its output.
+#            No model key. Runs in parallel with review, which never sees its output. With rerail_image, the job
+#            runs in that image, pulled with no credentials.
 #   rules-pass  as review, with its own budget: GITHUB_TOKEN (read) to prepare, the model key in the model
 #            step only. Reads only the review's findings and the modules' new findings.
 #   send     only RESULTS_SINK_URL and RESULTS_SINK_TOKEN, and only with send_results: the modules' results
@@ -98,6 +99,11 @@ on:
         default: "3"
       rerail_package:
         description: Rerail module. What `npm install --global` installs Rerail from (an npm spec or a tarball URL), or `remote:<version>` to download it from the results sink. Empty installs the Rerail release the reviewer pins and tests the module with (modules/rerail/pin/package.json). The secret RERAIL_PACKAGE_URL, when set, is used instead.
+        required: false
+        type: string
+        default: ""
+      rerail_image:
+        description: Rerail module. A public container image with Rerail and Node 24 installed, such as `ghcr.io/neralabs/rerail:next`. The modules job runs in it, and the Rerail module runs the image's Rerail rather than installing one, so a moving tag brings each new Rerail with no reviewer release. Leave rerail_package and RERAIL_PACKAGE_URL empty beside it. Empty runs the job on the runner, as before.
         required: false
         type: string
         default: ""
@@ -226,6 +232,8 @@ jobs:
     needs: gate
     if: inputs.modules != '' && contains(fromJSON('["review", "rereview", "scan"]'), needs.gate.outputs.mode)
     runs-on: ubuntu-latest
+    # Empty runs the job on the runner itself.
+    container: ${{ inputs.rerail_image }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -253,7 +261,9 @@ jobs:
           path: work/pr
           persist-credentials: false
 
+      # The image brings its own Node, which its Rerail was installed with.
       - uses: actions/setup-node@v7
+        if: inputs.rerail_image == ''
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -261,6 +271,7 @@ jobs:
         id: modules
         env:
           REVIEWER_MODULES: ${{ inputs.modules }}
+          RERAIL_IMAGE: ${{ inputs.rerail_image }}
           RERAIL_PACKAGE: ${{ inputs.rerail_package }}
           RERAIL_PACKAGE_URL: ${{ secrets.RERAIL_PACKAGE_URL }}
           RERAIL_PACKS: ${{ inputs.rerail_packs }}

@@ -13,6 +13,8 @@ approving the packs `.rerail/packs.json` lists (Rerail reads that file only unde
 ```yaml
     with:
       modules: rerail
+      # Optional: an image with Rerail installed, which the modules job runs in. Leave rerail_package empty beside it.
+      # rerail_image: ghcr.io/neralabs/rerail:next
       # Optional: the release the reviewer pins when left out. Or a tarball URL, or remote:<version>.
       # rerail_package: "@neralabs/rerail@<version>"
       # Left empty, the base branch's .rerail/packs.json decides; set, they replace its packs (see Which packs run):
@@ -20,7 +22,13 @@ approving the packs `.rerail/packs.json` lists (Rerail reads that file only unde
       # rerail_repo_packs: "" # packs in this repository, paths from its root, e.g. packs/team
 ```
 
-The module installs Rerail ([modules/rerail/install.sh](../modules/rerail/install.sh)) from the first of these
+With **`rerail_image`**, a public container image with Rerail and Node 24 installed, the modules job runs in that
+image and the module installs nothing: it runs the image's `rerail`. With a moving tag, such as
+`ghcr.io/neralabs/rerail:next` (each Rerail release on `next`, once it passed a scan of Rerail's own packs), a new
+Rerail reaches the caller with no reviewer release, and with no test here: the image's publisher stands behind it.
+Set beside `rerail_package` or `RERAIL_PACKAGE_URL`, the module fails rather than pick one.
+
+Otherwise the module installs Rerail ([modules/rerail/install.sh](../modules/rerail/install.sh)) from the first of these
 sources:
 
 1. **The secret `RERAIL_PACKAGE_URL`,** for a URL that must not appear in a public file.

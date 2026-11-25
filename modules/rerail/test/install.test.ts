@@ -113,3 +113,24 @@ test("no package, and a pin that names no exact version, is an error", () => {
     assert.ok(!calls.some((c) => c.startsWith("npm ")));
   }
 });
+
+test("rerail_image installs nothing: the image's Rerail runs, then each pack is added", () => {
+  const { status, calls, out } = run({ RERAIL_IMAGE: "ghcr.io/neralabs/rerail:next", RERAIL_PACKS: "rerail" });
+  assert.equal(status, 0, out);
+  assert.match(out, /Rerail from the image ghcr\.io\/neralabs\/rerail:next/);
+  assert.deepEqual(calls, ["rerail --version", "rerail packs add rerail"]);
+});
+
+test("rerail_image beside rerail_package or RERAIL_PACKAGE_URL, or with no rerail in it, is an error", () => {
+  const image = { RERAIL_IMAGE: "ghcr.io/neralabs/rerail:next" };
+  for (const [env, message] of [
+    [{ ...image, RERAIL_PACKAGE: "@neralabs/rerail@0.2.2" }, /leave rerail_package and RERAIL_PACKAGE_URL empty/],
+    [{ ...image, RERAIL_PACKAGE_URL: "https://files.example/r.tgz" }, /leave rerail_package and RERAIL_PACKAGE_URL empty/],
+    [{ ...image, PATH: "/usr/bin:/bin" }, /has no rerail on its PATH/],
+  ] as const) {
+    const { status, out, calls } = run(env);
+    assert.equal(status, 1, out);
+    assert.match(out, message);
+    assert.ok(!calls.some((c) => c.startsWith("npm ") || c.startsWith("rerail ")));
+  }
+});

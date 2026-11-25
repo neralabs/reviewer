@@ -61,7 +61,8 @@ authors' text. Who can read the data at the sink is up to whoever runs it.
 
 Modules install their own tools: the Rerail module fetches Rerail from where the caller says, or by default the
 release the reviewer pins from the npm registry. That is `RERAIL_PACKAGE_URL`, the npm registry, a URL in
-`rerail_package`, or, for `rerail_package: remote:<version>`, the results sink. The sink then sees the token, the
+`rerail_package`, or, for `rerail_package: remote:<version>`, the results sink. With `rerail_image`, the runner pulls
+that image from its registry instead, with no credentials. The sink then sees the token, the
 version and the runner's address. Nothing about the repository is sent to fetch it.
 
 ## To the model provider: the rules pass
