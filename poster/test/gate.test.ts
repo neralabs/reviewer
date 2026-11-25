@@ -139,7 +139,7 @@ test("the check workflow refuses every other event, rather than leave a required
   // pull_request would run the pull request's own copy of the caller, with its own choice of rule.
   assert.throws(() => decideCheckEvent("pull_request", { action: "synchronize", sender: human, pull_request: pr() }), /pull_request_target only, not pull_request:/);
   assert.throws(() => decideCheckEvent("issue_comment", comment("@example-reviewer review")), /not issue_comment/);
-  assert.throws(() => decideCheckEvent("pull_request_target", { action: "opened", sender: human }), /pull_request_target only/);
+  assert.throws(() => decideCheckEvent("pull_request_target", { action: "opened", sender: human }), /names no pull request/);
 });
 
 test("a reply on a bot finding thread is feedback on that finding", async () => {

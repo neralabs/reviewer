@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { annotationFor, checkCommand, postCheckRun } from "../src/check.ts";
+import { annotationFor, checkCommand, checkName, postCheckRun } from "../src/check.ts";
 import { decideCheck } from "../src/check-policy.ts";
 import { GitHub } from "../src/github.ts";
 import type { ModuleFinding, ModuleResult } from "../src/modules.ts";
@@ -39,7 +39,7 @@ interface Call {
   method: string;
   url: string;
   auth: string;
-  body: { name?: string; head_sha?: string; status?: string; conclusion?: string; details_url?: string; output: { title: string; summary: string; annotations: object[] } };
+  body: { name?: string; head_sha?: string; status?: string; conclusion?: string; details_url?: string; output: { title: string; summary: string; annotations: { start_line: number }[] } };
 }
 
 /** A stand-in for GitHub's check-runs endpoints that records every request and answers as GitHub does. */
@@ -77,7 +77,7 @@ test("the check run is created completed on the scanned commit, and annotations 
   try {
     const findings = Array.from({ length: 120 }, (_, i) => finding({ fingerprint: `fp${i}`, start: { line: i + 1, column: 1 }, end: { line: i + 1, column: 9 } }));
     const outcome = decideCheck("no-new", result(findings));
-    const page = await postCheckRun(new GitHub("app-token", url), repo, { name: "rerail", sha: SHA, outcome, detailsUrl: "https://github.test/o/r/actions/runs/7" });
+    const page = await postCheckRun(new GitHub("app-token", url), repo, { name: "rerail (main)", sha: SHA, outcome, detailsUrl: "https://github.test/o/r/actions/runs/7" });
     assert.equal(page, "https://github.test/o/r/runs/42");
     assert.deepEqual(calls.map((c) => [c.method, c.url, c.auth, c.body.output.annotations.length]), [
       ["POST", "/repos/o/r/check-runs", "Bearer app-token", 50],
@@ -85,19 +85,20 @@ test("the check run is created completed on the scanned commit, and annotations 
       ["PATCH", "/repos/o/r/check-runs/42", "Bearer app-token", 20],
     ]);
     const { output, ...created } = calls[0]!.body;
-    assert.deepEqual(created, { name: "rerail", head_sha: SHA, status: "completed", conclusion: "failure", details_url: "https://github.test/o/r/actions/runs/7" });
+    assert.deepEqual(created, { name: "rerail (main)", head_sha: SHA, status: "completed", conclusion: "failure", details_url: "https://github.test/o/r/actions/runs/7" });
     assert.equal(output.title, "New: 120 warnings");
     // Every finding is marked once, in order, and each update repeats the title and summary it would otherwise clear.
-    assert.deepEqual(calls.flatMap((c) => c.body.output.annotations.map((a) => (a as { start_line: number }).start_line)), findings.map((f) => f.start.line));
+    assert.deepEqual(calls.flatMap((c) => c.body.output.annotations.map((a) => a.start_line)), findings.map((f) => f.start.line));
     assert.ok(calls.every((c) => c.body.output.title === output.title && c.body.output.summary === output.summary));
   } finally {
     server.close();
   }
 });
 
-/** A work folder as the check job has it: the modules job's results, downloaded. */
-function workWith(results: Record<string, ModuleResult>): string {
+/** A work folder as the check job has it: the gate's decision from the bundle, and the modules job's results. */
+function workWith(results: Record<string, ModuleResult>, gate: object = { mode: "check", pr: 7, baseRef: "main" }): string {
   const work = mkdtempSync(join(tmpdir(), "check-"));
+  writeFileSync(join(work, "gate.json"), JSON.stringify(gate));
   mkdirSync(join(work, "modules"));
   writeFileSync(join(work, "modules", "index.json"), JSON.stringify(Object.keys(results)));
   for (const [id, r] of Object.entries(results)) {
@@ -133,7 +134,13 @@ async function withEnv<T>(env: Record<string, string>, fn: () => Promise<T>): Pr
   }
 }
 
-test("the check command posts one check per module, named by its id, each decided by the caller's rule", async () => {
+test("a check is named for its module and for the base branch it was decided against", () => {
+  // One commit can head pull requests into two branches, with different rules: each base gets its own check.
+  assert.equal(checkName("rerail", "main"), "rerail (main)");
+  assert.notEqual(checkName("rerail", "release/1.x"), checkName("rerail", "main"));
+});
+
+test("the check command posts one check per module, for the gate's base branch, each decided by the caller's rule", async () => {
   const { url, calls, server } = await fakeGitHub();
   const work = workWith({
     rerail: result([finding({ state: "existing" })], { baseline: { error: 0, warning: 1, note: 0 } }),
@@ -144,31 +151,37 @@ test("the check command posts one check per module, named by its id, each decide
   try {
     await withEnv({ ...env, REVIEWER_CHECK_RULE: "not-more" }, () => checkCommand(settingsFor(work)));
     assert.deepEqual(calls.map((c) => [c.method, c.body.name, c.body.head_sha, c.body.conclusion]), [
-      ["POST", "rerail", SHA, "success"],
+      ["POST", "rerail (main)", SHA, "success"],
       // A module that failed fails its check: the gate doesn't open because the scan broke.
-      ["POST", "todo", SHA, "failure"],
+      ["POST", "todo (main)", SHA, "failure"],
+    ]);
+    assert.deepEqual(readFileSync(summary, "utf8").trim().split("\n").map((line) => line.replace(/\. \[Open the check\].*$/, "")), [
+      `Check \`rerail (main)\` on \`aaaaaaa\`: **success**. Errors and warnings in the files changed: 1 now, 1 on the merge base`,
+      `Check \`todo (main)\` on \`aaaaaaa\`: **failure**. The check could not run`,
     ]);
     calls.length = 0;
     await withEnv({ ...env, REVIEWER_CHECK_RULE: "zero" }, () => checkCommand(settingsFor(work)));
-    assert.deepEqual(calls.map((c) => [c.body.name, c.body.conclusion]), [["rerail", "failure"], ["todo", "failure"]]);
+    assert.deepEqual(calls.map((c) => [c.body.name, c.body.conclusion]), [["rerail (main)", "failure"], ["todo (main)", "failure"]]);
   } finally {
     server.close();
     rmSync(work, { recursive: true, force: true });
   }
 });
 
-test("the check command posts nothing when its rule, its commit or its results are missing or wrong", async () => {
+test("the check command posts nothing when its rule, its commit, its base branch or its results are missing or wrong", async () => {
   const { url, calls, server } = await fakeGitHub();
   const work = workWith({ rerail: result([]) });
   const empty = workWith({});
+  const noBase = workWith({ rerail: result([]) }, { mode: "check", pr: 7 });
   const env = { GITHUB_API_URL: url, APP_TOKEN: "app-token", REVIEWER_CHECK_SHA: SHA, REVIEWER_CHECK_RULE: "no-new" };
   try {
     await assert.rejects(withEnv({ ...env, REVIEWER_CHECK_RULE: "lenient" }, () => checkCommand(settingsFor(work))), /unknown check rule/);
     await assert.rejects(withEnv({ ...env, REVIEWER_CHECK_SHA: "main" }, () => checkCommand(settingsFor(work))), /not a commit id/);
     await assert.rejects(withEnv(env, () => checkCommand(settingsFor(empty))), /no results to check/);
+    await assert.rejects(withEnv(env, () => checkCommand(settingsFor(noBase))), /names no base branch/);
     assert.deepEqual(calls, []);
   } finally {
     server.close();
-    for (const dir of [work, empty]) rmSync(dir, { recursive: true, force: true });
+    for (const dir of [work, empty, noBase]) rmSync(dir, { recursive: true, force: true });
   }
 });

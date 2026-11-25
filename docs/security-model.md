@@ -85,11 +85,17 @@ included, and posts each result as a check that a ruleset can require.
   the pull request was checked out.
 - **The rule comes from the base branch.** The workflow handles `pull_request_target` only and fails on any other
   event, so a pull request can't run its own copy of the caller with a weaker rule.
+- **A check is for one base branch, and says so in its name** (`rerail (main)`). A check run belongs to a commit,
+  and the same commit can be the head of a second pull request into a branch with older rules or a weaker `rule`,
+  or of one that is later moved to `main`. With the module's id alone as the name, a pass against that branch would
+  satisfy `main`'s required check. The base comes from the event, written down before the pull request is checked
+  out. The module's own base lookup uses the full ref `refs/remotes/origin/<base>`, which a tag pushed as
+  `origin/<base>` can't stand in for.
 - **What is posted:** counts, check ids as code, and each finding's message as plain annotation text with
   credentials redacted. A module's error is shown as code.
 - **Require the check from the app.** A workflow's own `GITHUB_TOKEN` can create a check with any name, so a ruleset
-  that requires `rerail` from any source could be satisfied by a pull request's own workflow. Set the app as the
-  required check's source.
+  that requires `rerail (main)` from any source could be satisfied by a pull request's own workflow. Set the app as
+  the required check's source.
 - **Limit:** the check reports what the module found. A scanner that a crafted file could make miss a finding would
   let that finding through, as with any scanner.
 

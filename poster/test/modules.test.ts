@@ -24,6 +24,8 @@ function workspace() {
   writeFileSync(join(pr, "new.ts"), "export const x = 1;\n// TODO: added by the PR\n");
   git("add", "-A");
   git("commit", "-qm", "pr");
+  // A tag named like the remote branch, at the PR's own commit: the base is still the branch.
+  git("tag", "origin/main", "HEAD");
   return { work, base: git("rev-parse", "HEAD~1") };
 }
 
@@ -100,6 +102,9 @@ test("a module's result must keep to the contract, or the whole result counts as
     [result([], { baseline: { error: 1, warning: -1, note: 0 } }), /baseline is not a count/],
     [result([], { baseline: { error: 1 } }), /baseline is not a count/],
     [result([], { baseline: 3 }), /baseline is not a count/],
+    [result([], { baseline: null }), /baseline is not a count/],
+    [result([], { baseline: [0, 0, 0] }), /baseline is not a count/],
+    [result([], { baseline: { error: 1.5, warning: 0, note: 0 } }), /baseline is not a count/],
     [result([], { mode: "repository" }), /is for m in repository mode/],
     [result([], { status: "failed", error: "it broke" }), /it broke/],
     [result([], { checks: [{ id: "has space", level: "warning" }] }), /plain id/],

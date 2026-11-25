@@ -4,7 +4,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
-import { packDirUnder, parseScan, scan, toResult, type Env } from "../run.ts";
+import { baselineOf, packDirUnder, parseScan, scan, toResult, type Env } from "../run.ts";
 
 const FIXTURE = new URL("./fixtures/rerail-scan.json", import.meta.url).pathname;
 const REAL = new URL("./fixtures/c3-scan-rerail.json", import.meta.url).pathname;
@@ -209,6 +209,43 @@ test("the merge base is scanned even when the PR's files are clean, so what it f
     assert.equal(result.status, "completed");
     assert.deepEqual(result.findings, []);
     assert.deepEqual(result.baseline, { error: 0, warning: 1, note: 0 });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the merge base's violations are counted by level, and a merge base with nothing to scan counts none", () => {
+  // The fixture has one violation of a block rule, one of a steer rule and one of a log rule.
+  assert.deepEqual(baselineOf(load(FIXTURE)), { error: 1, warning: 1, note: 1 });
+  assert.deepEqual(baselineOf(undefined), { error: 0, warning: 0, note: 0 });
+  const { root, env, bin, log } = workspace();
+  try {
+    // A change that touches no file the merge base has: here, the head itself as the merge base.
+    const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: env.checkout, encoding: "utf8" }).trim();
+    withFake(bin, log, () => scan({ ...env, mergeBase: head }), { FAKE_HEAD_CLEAN: "1" });
+    assert.equal(calls(log).filter((c) => c.args[0] === "scan").length, 1, "no merge-base scan");
+    const result = JSON.parse(readFileSync(join(env.out, "results.json"), "utf8")) as { status: string; baseline: object };
+    assert.deepEqual([result.status, result.baseline], ["completed", { error: 0, warning: 0, note: 0 }]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a link the change removes doesn't add what it pointed at to the merge base's count", () => {
+  const { root, env, bin, log } = workspace();
+  const git = (...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args], { cwd: env.checkout, encoding: "utf8" }).trim();
+  try {
+    // The merge base has a link to a file the change leaves alone; the change deletes only the link.
+    symlinkSync("src/log.ts", join(env.checkout, "link.ts"));
+    git("add", "-A");
+    git("commit", "-qm", "a link");
+    const mergeBase = git("rev-parse", "HEAD");
+    rmSync(join(env.checkout, "link.ts"));
+    git("commit", "-qam", "delete the link");
+    withFake(bin, log, () => scan({ ...env, mergeBase }), { FAKE_HEAD_CLEAN: "1" });
+    assert.equal(calls(log).filter((c) => c.args[0] === "scan").length, 1, "the link is not scanned as the file it points at");
+    const result = JSON.parse(readFileSync(join(env.out, "results.json"), "utf8")) as { baseline: object };
+    assert.deepEqual(result.baseline, { error: 0, warning: 0, note: 0 });
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

@@ -248,9 +248,10 @@ export async function decide(eventName: string, payload: EventPayload, cfg: Gate
  * rule it is checked by, and a caller that quietly did nothing would leave a required check waiting for ever.
  */
 export function decideCheckEvent(eventName: string, payload: EventPayload): Decision {
-  const pr = payload.pull_request;
-  if (eventName !== "pull_request_target" || !pr) {
+  if (eventName !== "pull_request_target") {
     throw new Error(`the check workflow runs on pull_request_target only, not ${eventName}: that event runs the caller from the base branch, so a pull request can't change the rule it is checked by`);
   }
+  const pr = payload.pull_request;
+  if (!pr) throw new Error("the pull_request_target event names no pull request");
   return { mode: "check", reason: `pull_request_target.${payload.action ?? "?"}`, ...target(pr, payload.sender?.login ?? "") };
 }

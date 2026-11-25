@@ -8,7 +8,7 @@
 // or used as config.
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve, sep } from "node:path";
 
 type RuleMode = "log" | "steer" | "block";
@@ -280,7 +280,7 @@ export type Baseline = Record<Level, number>;
 
 /** Every path the change touches: added, changed or deleted, and both names of a renamed file. */
 function changedPaths(e: Env): string[] {
-  const names = execFileSync("git", ["diff", "--name-only", "--no-renames", "-z", e.mergeBase, "HEAD"], { cwd: e.checkout, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const names = execFileSync("git", ["diff", "--name-only", "--no-renames", "-z", e.mergeBase, "HEAD"], { cwd: e.checkout, encoding: "utf8", maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"] });
   return names.split("\u0000").filter(Boolean);
 }
 
@@ -292,9 +292,10 @@ function scanMergeBase(e: Env, head: ScanResult, rulesArgs: string[]): ScanResul
   const baseDir = resolve(e.home, "merge-base");
   if (!existsSync(baseDir)) git(e.checkout, ["worktree", "add", "--quiet", "--detach", "--force", baseDir, e.mergeBase]);
   const touched = [...new Set([...changedPaths(e), ...head.violations.map((v) => v.path)])];
-  // A file the change added isn't on the base; scan only what exists there. A name with a line break is left out:
-  // the list file below has one path a line, so it would read as other paths, which the change doesn't touch.
-  const paths = touched.filter((p) => !/[\u0000-\u001f]/.test(p) && existsSync(join(baseDir, p)));
+  // Only regular files the base has. A file the change added isn't there. A folder (a submodule) or a symlink is
+  // not the file's own content: a link would count whatever it points at. A name with a line break is left out
+  // too: the list file below has one path a line, so it would read as other paths, which the change doesn't touch.
+  const paths = touched.filter((p) => !/[\u0000-\u001f]/.test(p) && lstatSync(join(baseDir, p), { throwIfNoEntry: false })?.isFile());
   if (!paths.length) return undefined;
   const listFile = join(e.home, "base-paths.txt");
   writeFileSync(listFile, `${paths.join("\n")}\n`);

@@ -82,7 +82,17 @@ test("a module that failed fails the check under every rule, with its error show
   }
 });
 
-test("the findings marked on their lines are the ones the rule is about, new ones and errors first", () => {
+test("a result for a whole branch can't say what a change added, so it fails the check", () => {
+  // In repository mode every finding is existing: read as a diff, no-new would pass whatever the branch held.
+  const branch: ModuleResult = { ...result([finding("error", "existing")]), mode: "repository" };
+  for (const rule of CHECK_RULES) {
+    const outcome = decideCheck(rule, branch);
+    assert.deepEqual([outcome.conclusion, outcome.title], ["failure", "The check could not run"], rule);
+    assert.match(outcome.summary, /for a whole branch, not for this change/);
+  }
+});
+
+test("the findings marked on their lines are the ones the rule is about: what fails the check first, notes last", () => {
   const findings = [
     finding("note", "existing", { path: "a.ts" }),
     finding("warning", "existing", { path: "b.ts" }),
@@ -97,11 +107,12 @@ test("the findings marked on their lines are the ones the rule is about, new one
   const fresh = ["new error m.ts:2", "new error m.ts:9", "new warning z.ts:3", "new note c.ts:3"];
   assert.deepEqual(marked("no-new"), fresh);
   assert.deepEqual(marked("not-more"), fresh);
-  // Under zero the errors and warnings already there have to go too; an old note is nobody's job here.
-  assert.deepEqual(marked("zero"), [...fresh, "existing error e.ts:3", "existing warning b.ts:3"]);
+  // Under zero the errors and warnings already there have to go too, and come before a note, which fails nothing.
+  // An old note is nobody's job here.
+  assert.deepEqual(marked("zero"), ["new error m.ts:2", "new error m.ts:9", "new warning z.ts:3", "existing error e.ts:3", "existing warning b.ts:3", "new note c.ts:3"]);
 });
 
-test("the summary counts new, existing and the merge base by level, and lists the checks by id", () => {
+test("the summary counts new, existing and the merge base by level, and lists the checks, the ones with new findings first", () => {
   const r = result(
     [finding("error", "new", { checkId: "no-raw-sql" }), finding("error", "new", { checkId: "no-raw-sql" }), finding("warning", "existing", { checkId: "pack/no-console" }), finding("note", "new", { checkId: "prefer-const" })],
     { error: 0, warning: 4, note: 2 },
@@ -119,7 +130,18 @@ test("the summary counts new, existing and the merge base by level, and lists th
   ]) {
     assert.ok(summary.includes(row), `${row}\n${summary}`);
   }
+  // The checks with the most new findings come first; a check with only old findings comes last.
+  const at = (id: string) => summary.indexOf(`| \`${id}\` |`);
+  assert.ok(at("no-raw-sql") < at("prefer-const") && at("prefer-const") < at("pack/no-console"), summary);
   assert.ok(!decideCheck("no-new", result([])).summary.includes("merge base, same files"), "no row for counts the module didn't give");
+});
+
+test("a summary lists at most 30 checks and says how many more found something", () => {
+  const many = Array.from({ length: 33 }, (_, i) => finding("warning", "new", { checkId: `check-${String(i).padStart(2, "0")}` }));
+  const { summary } = decideCheck("no-new", result(many));
+  assert.equal(summary.split("\n").filter((line) => line.startsWith("| `check-")).length, 30);
+  assert.ok(summary.includes("| `check-29` |") && !summary.includes("| `check-30` |"), "equal counts list by id");
+  assert.match(summary, /And 3 more checks with findings\./);
 });
 
 test("more findings than can be marked are still counted, and the summary says how many were marked", () => {
@@ -128,6 +150,10 @@ test("more findings than can be marked are still counted, and the summary says h
   assert.equal(outcome.marked.length, MAX_MARKED);
   assert.equal(outcome.title, `New: ${MAX_MARKED + 7} warnings`);
   assert.match(outcome.summary, new RegExp(`Only the first ${MAX_MARKED} of ${MAX_MARKED + 7} findings are marked`));
+  // What is cut is what matters least: under zero, new notes go before any error that fails the check.
+  const errors = Array.from({ length: MAX_MARKED }, (_, i) => finding("error", "existing", { start: { line: i + 1, column: 1 } }));
+  const notes = Array.from({ length: 10 }, () => finding("note", "new"));
+  assert.ok(decideCheck("zero", result([...notes, ...errors])).marked.every((f) => f.level === "error"));
 });
 
 test("an unknown rule is refused, by name", () => {

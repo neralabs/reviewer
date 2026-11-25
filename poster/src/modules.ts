@@ -98,7 +98,10 @@ function checksProblem(r: ModuleResult): string | undefined {
   if (!Array.isArray(r.checks) || !Array.isArray(r.findings)) return "no checks or findings";
   if (r.findings.length > MAX_FINDINGS) return `more than ${MAX_FINDINGS} findings`;
   const bad = r.checks.find((c) => typeof c?.id !== "string" || !CHECK_ID.test(c.id) || !LEVELS.includes(c.level));
-  if (bad) return `a check is not a plain id with a level (${JSON.stringify(bad).slice(0, 100)})`;
+  return bad ? `a check is not a plain id with a level (${JSON.stringify(bad).slice(0, 100)})` : undefined;
+}
+
+function baselineProblem(r: ModuleResult): string | undefined {
   if (r.baseline === undefined) return undefined;
   const baseline = r.baseline as Record<string, unknown> | null;
   const counted = typeof baseline === "object" && baseline !== null && LEVELS.every((l) => Number.isInteger(baseline[l]) && (baseline[l] as number) >= 0);
@@ -113,7 +116,7 @@ function headerProblem(r: ModuleResult, module: string, mode: ModuleMode): strin
 
 function statusProblem(r: ModuleResult): string | undefined {
   if (r.status === "failed") return typeof r.error === "string" ? r.error : "the module reported a failure";
-  return r.status === "completed" ? checksProblem(r) : `status ${JSON.stringify(r.status)}`;
+  return r.status === "completed" ? (checksProblem(r) ?? baselineProblem(r)) : `status ${JSON.stringify(r.status)}`;
 }
 
 function parseJson(text: string): ModuleResult | undefined {
@@ -166,7 +169,8 @@ export function moduleTarget(work: string, mode: ModuleMode, baseRef: string | u
   const headSha = git(checkout, ["rev-parse", "HEAD"]);
   if (mode === "repository") return { mode, checkout, headSha, baseCheckout: checkout, baseSha: headSha, mergeBase: headSha };
   if (!baseRef) throw new Error("diff mode needs the base ref");
-  const baseSha = git(checkout, ["rev-parse", `origin/${baseRef}^{commit}`]);
+  // The full ref: a tag someone pushed as `origin/<base>` would win over the branch under the short name.
+  const baseSha = git(checkout, ["rev-parse", `refs/remotes/origin/${baseRef}^{commit}`]);
   const mergeBase = git(checkout, ["merge-base", baseSha, "HEAD"]);
   // Absolute: git resolves a relative worktree path against the checkout, not this process.
   const baseCheckout = resolve(work, "base-tip");

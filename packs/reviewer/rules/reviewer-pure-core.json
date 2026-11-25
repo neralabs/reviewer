@@ -34,7 +34,7 @@
                 "kind": "template_string"
               }
             ],
-            "regex": "^[\"'`](?:(?:node:)?(?:fs|fs/promises|child_process|net|http|https|http2|dns|dns/promises|os|tls|dgram|worker_threads|readline|readline/promises|cluster|process|vm|inspector)|\\./(?:github|settings|bot-history|ci|modules|sink|agents|prepare|post|respond|module-commands|cli|findings|rules-pass)\\.ts)[\"'`]$",
+            "regex": "^[\"'`](?:(?:node:)?(?:fs|fs/promises|child_process|net|http|https|http2|dns|dns/promises|os|tls|dgram|worker_threads|readline|readline/promises|cluster|process|vm|inspector)|\\./(?:github|settings|bot-history|ci|modules|sink|agents|prepare|post|respond|check|module-commands|cli|findings|rules-pass)\\.ts)[\"'`]$",
             "inside": {
               "any": [
                 {

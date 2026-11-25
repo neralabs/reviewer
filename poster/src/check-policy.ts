@@ -91,11 +91,18 @@ function checksTable(findings: readonly ModuleFinding[]): string {
   return `\n\n| Check | Level | New | Already there |\n| --- | --- | --: | --: |\n${lines.join("\n")}${more}`;
 }
 
-/** The findings the rule is about: under `zero` every error and warning; otherwise the new ones. New notes come too. */
+/**
+ * The findings the rule is about: under `zero` every error and warning; otherwise the new ones. New notes come too,
+ * last, so that past the cap it is a note that goes unmarked and not an error that failed the check.
+ */
 function about(rule: CheckRule, findings: readonly ModuleFinding[]): ModuleFinding[] {
   const picked = findings.filter((f) => f.state === "new" || (rule === "zero" && f.level !== "note"));
   return picked.sort(
-    (a, b) => Number(b.state === "new") - Number(a.state === "new") || RANK[a.level] - RANK[b.level] || (a.path === b.path ? a.start.line - b.start.line : a.path < b.path ? -1 : 1),
+    (a, b) =>
+      Number(a.level === "note") - Number(b.level === "note") ||
+      Number(b.state === "new") - Number(a.state === "new") ||
+      RANK[a.level] - RANK[b.level] ||
+      (a.path === b.path ? a.start.line - b.start.line : a.path < b.path ? -1 : 1),
   );
 }
 
@@ -108,6 +115,10 @@ export function decideCheck(rule: CheckRule, result: ModuleResult): CheckOutcome
   if (result.status !== "completed") {
     const why = codeSpan(redactSecrets(result.error ?? "no reason given"));
     return { conclusion: "failure", title: "The check could not run", summary: `${heading}\n\n**Failed:** the module did not complete, so the rule could not be decided: ${why}`, marked: [] };
+  }
+  // A whole-branch result calls everything existing; only a diff can say what a change added.
+  if (result.mode !== "diff") {
+    return { conclusion: "failure", title: "The check could not run", summary: `${heading}\n\n**Failed:** the module's result is for a whole branch, not for this change.`, marked: [] };
   }
   const { passed, title } = judge(rule, result.findings.filter((f) => f.level !== "note"), result.baseline);
   const all = about(rule, result.findings);

@@ -30,7 +30,7 @@ on:
         type: string
         default: main
       modules:
-        description: The modules to check with, space-separated module ids (docs/modules.md), e.g. `rerail`. Each gets its own check run, named by its id.
+        description: The modules to check with, space-separated module ids (docs/modules.md), e.g. `rerail`. Each gets its own check run, named `<id> (<base branch>)`, e.g. `rerail (main)`.
         required: true
         type: string
       rule:
@@ -78,7 +78,7 @@ jobs:
   scan:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # A newer push to the same pull request supersedes this one.
+    # A newer event for the same pull request supersedes this one: a push, or a move to another base branch.
     concurrency:
       group: reviewer-check-${{ github.repository }}-${{ github.event.pull_request.number || github.run_id }}
       cancel-in-progress: true
@@ -148,8 +148,8 @@ jobs:
           retention-days: 3
           if-no-files-found: error
 
-  # One check run per module on the commit the scan job checked out. The job succeeds whatever the checks conclude:
-  # the check runs carry the result.
+  # One check run per module on the commit the scan job checked out, named for the module and the base branch. The
+  # job succeeds whatever the checks conclude: the check runs carry the result.
   check:
     needs: scan
     runs-on: ubuntu-latest

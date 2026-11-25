@@ -7,8 +7,10 @@ on:
   # pull_request_target, not pull_request: GitHub then runs this file from the base branch, so a PR can't change
   # the rule it is checked by. Safe here because nothing from the PR is executed: the modules read it as data,
   # with their rules from the base branch. Fork PRs are checked too.
+  # `edited` is for a PR moved to another base branch: the check is for one base, so the new one needs its own.
+  # It also fires when the title or description changes, which costs a scan and changes nothing.
   pull_request_target:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, edited]
 
 # Read-only. The check is written with the neralabs-reviewer token the workflow mints for that job.
 permissions:
@@ -20,7 +22,7 @@ jobs:
     with:
       app_client_id: ${{ vars.REVIEWER_APP_CLIENT_ID }}
       reviewer_ref: main # keep equal to the @ref above
-      modules: rerail # one check run each, named by the module's id: require `rerail`
+      modules: rerail # one check each, named `<module> (<base branch>)`: on main, require `rerail (main)`
       # When the check passes. Errors and warnings count (for Rerail: rules in Block and Steer); notes never do.
       #   no-new    the change adds none
       #   not-more  the files the change touches have no more than on the merge base

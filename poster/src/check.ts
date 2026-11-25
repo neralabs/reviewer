@@ -3,7 +3,10 @@
 // checked results, never pull request content, and writes with a neralabs-reviewer token that can write checks and
 // nothing else.
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { decideCheck, parseCheckRule, type CheckOutcome } from "./check-policy.ts";
+import type { Decision } from "./gate.ts";
 import { GitHub, type RepoRef } from "./github.ts";
 import { lastLine, readModuleResults, type ModuleFinding, type ModuleLevel } from "./modules.ts";
 import { appendSummary, requireEnv, type Settings } from "./settings.ts";
@@ -62,19 +65,33 @@ export async function postCheckRun(gh: GitHub, repo: RepoRef, run: CheckRun): Pr
 }
 
 /**
- * One check run per module, named by the module's id, on REVIEWER_CHECK_SHA: the commit the modules job checked
- * out, which is the pull request's head at that moment. The job itself succeeds whatever the checks conclude.
+ * The name a ruleset requires: the module's id and the base branch the change was checked against. The result
+ * depends on that base (its rules, its copy of the caller, the merge base) while a check run belongs to a commit,
+ * and one commit can be the head of pull requests into several branches. Without the base in the name, a pass
+ * against one branch would stand for all of them.
+ */
+export function checkName(module: string, baseRef: string): string {
+  return `${module} (${baseRef})`;
+}
+
+/**
+ * One check run per module on REVIEWER_CHECK_SHA: the commit the modules job checked out, which is the pull
+ * request's head at that moment. The base branch comes from the gate's decision, which the scan job wrote from the
+ * event before it checked the pull request out. The job itself succeeds whatever the checks conclude.
  */
 export async function checkCommand(s: Settings): Promise<void> {
   const rule = parseCheckRule(requireEnv("REVIEWER_CHECK_RULE"));
   const sha = requireEnv("REVIEWER_CHECK_SHA");
   if (!/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(sha)) throw new Error("REVIEWER_CHECK_SHA is not a commit id");
+  const { baseRef } = JSON.parse(readFileSync(join(s.work, "gate.json"), "utf8")) as Decision;
+  if (!baseRef) throw new Error("the gate's decision names no base branch");
   const results = readModuleResults(s.work);
   if (!results.length) throw new Error("the modules job left no results to check: name at least one module in `modules`");
   const write = new GitHub(requireEnv("APP_TOKEN"));
   for (const result of results) {
     const outcome = decideCheck(rule, result);
-    const url = await postCheckRun(write, s.repo, { name: result.module, sha, outcome, detailsUrl: s.runUrl });
-    appendSummary(`Check \`${result.module}\` on \`${sha.slice(0, 7)}\`: **${outcome.conclusion}**. ${outcome.title}. [Open the check](${url})`);
+    const name = checkName(result.module, baseRef);
+    const url = await postCheckRun(write, s.repo, { name, sha, outcome, detailsUrl: s.runUrl });
+    appendSummary(`Check \`${name.replace(/`/g, "")}\` on \`${sha.slice(0, 7)}\`: **${outcome.conclusion}**. ${outcome.title}. [Open the check](${url})`);
   }
 }
