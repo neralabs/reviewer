@@ -2,6 +2,6 @@
   "private": true,
   "description": "The Rerail release the rerail module installs when rerail_package is empty, and the one it is tested with (install.sh, ci.yml). Never installed from here; Dependabot moves the pin.",
   "dependencies": {
-    "@neralabs/rerail": "0.1.5"
+    "@neralabs/rerail": "0.2.2"
   }
 }
