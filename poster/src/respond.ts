@@ -4,10 +4,11 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { activeBotApprovals, listReviews } from "./bot-history.ts";
+import { activeBotApprovals, botChangeRequests, listReviews, type Review } from "./bot-history.ts";
 import { HELP_TEXT } from "./commands.ts";
 import type { Decision } from "./gate.ts";
 import { fileAt, GitHub, type RepoRef } from "./github.ts";
+import type { Verdict } from "./policy.ts";
 import { parseReviewConfig } from "./review-config.ts";
 import { appendSummary, requireEnv, type Settings } from "./settings.ts";
 
@@ -30,8 +31,27 @@ export async function removeTeamRequest(gh: GitHub, repo: RepoRef, pr: number, t
   return true;
 }
 
-export async function dismissApproval(gh: GitHub, repo: RepoRef, pr: number, reviewId: number, message: string): Promise<void> {
+export async function dismissReview(gh: GitHub, repo: RepoRef, pr: number, reviewId: number, message: string): Promise<void> {
   await gh.request("PUT", `/repos/${repo.owner}/${repo.repo}/pulls/${pr}/reviews/${reviewId}/dismissals`, { message, event: "DISMISS" });
+}
+
+/**
+ * Dismisses the bot's change requests once it posts a review with no blocker (any verdict but request_changes) at `sha`. A COMMENTED review
+ * doesn't replace a CHANGES_REQUESTED one in GitHub's review decision, so without this an escalated clean review
+ * leaves the PR blocked. Touches only the bot's own reviews. A failed dismissal is a problem to report, not a failure.
+ */
+export async function dismissChangeRequests(gh: GitHub, repo: RepoRef, pr: number, reviews: readonly Review[], botLogin: string, posted: { verdict: Verdict; sha: string }): Promise<string[]> {
+  if (posted.verdict === "request_changes") return [];
+  const problems: string[] = [];
+  const message = `Superseded by a review with no blockers at ${posted.sha.slice(0, 7)}.`;
+  for (const review of botChangeRequests(reviews, botLogin)) {
+    try {
+      await dismissReview(gh, repo, pr, review.id, message);
+    } catch (err) {
+      problems.push(`couldn't dismiss the change request at ${review.commit_id.slice(0, 7)}: ${(err as Error).message}`);
+    }
+  }
+  return problems;
 }
 
 function comment(gh: GitHub, repo: RepoRef, pr: number, body: string): Promise<unknown> {
@@ -42,7 +62,7 @@ function comment(gh: GitHub, repo: RepoRef, pr: number, body: string): Promise<u
 async function withdrawApproval(s: Settings, write: GitHub, pr: number, why: string): Promise<boolean> {
   const read = new GitHub(requireEnv("GITHUB_TOKEN"));
   const approvals = activeBotApprovals(await listReviews(read, s.repo, pr), s.botLogin);
-  for (const approval of approvals) await dismissApproval(write, s.repo, pr, approval.id, why);
+  for (const approval of approvals) await dismissReview(write, s.repo, pr, approval.id, why);
   return approvals.length > 0;
 }
 

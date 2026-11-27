@@ -18,7 +18,7 @@ import { decideEscalation, decideVerdict } from "./policy.ts";
 import type { Manifest } from "./prepare.ts";
 import { isDependencyAuthor, parseReviewConfig, type ReviewConfig } from "./review-config.ts";
 import { closingReply, inlineBody, summaryBody, type Finding, type PriorStatus } from "./render.ts";
-import { dismissApproval, removeTeamRequest } from "./respond.ts";
+import { dismissChangeRequests, dismissReview, removeTeamRequest } from "./respond.ts";
 import { annotate, loadRulesPass, storedSource } from "./rules-pass.ts";
 import { appendSummary, requireEnv, type Settings } from "./settings.ts";
 import type { StoredFinding } from "./text.ts";
@@ -219,7 +219,7 @@ export async function post(s: Settings): Promise<void> {
 
   // An approval the bot gave earlier must not outlive this review.
   for (const approval of activeBotApprovals(reviews, s.botLogin)) {
-    if (verdict !== "approve") await dismissApproval(write, s.repo, manifest.pr, approval.id, "Superseded by a newer review.");
+    if (verdict !== "approve") await dismissReview(write, s.repo, manifest.pr, approval.id, "Superseded by a newer review.");
   }
 
   const reviewsPath = `${prPath}/reviews`;
@@ -237,6 +237,10 @@ export async function post(s: Settings): Promise<void> {
     problems.push(`inline comments rejected (${err.body.slice(0, 200)}); all findings are in the summary`);
     await write.request("POST", reviewsPath, { commit_id: manifest.headSha, event, body: body([], [...placement.inline, ...placement.additional]) });
   }
+
+  // A review with no blocker lifts the bot's earlier change requests: a COMMENTED review doesn't replace them in
+  // GitHub's review decision. Done after posting, so a failed post leaves them standing.
+  problems.push(...(await dismissChangeRequests(write, s.repo, manifest.pr, reviews, s.botLogin, { verdict, sha: manifest.headSha })));
 
   // The request is fulfilled; clearing it lets people request the team again for another review.
   if (pr.requested_teams.some((t) => t.slug === s.teamSlug)) {
