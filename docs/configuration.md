@@ -2,6 +2,8 @@
 
 A target repository configures the reviewer in three places: the caller workflow (inputs and secrets), `REVIEW.md` (the review bar and a settings block), and `CODEOWNERS` (who gets escalations). Start from [templates/caller.yml](../templates/caller.yml) and [templates/REVIEW.md](../templates/REVIEW.md).
 
+The check workflow, which posts the modules' results as a check on every pull request, has its own caller, inputs and secrets: see [check.md](check.md).
+
 ## Workflow inputs
 
 Passed under `with:` in the caller.

@@ -41,6 +41,10 @@
     {
       "path": "poster/src/github.ts",
       "content": "async graphql<T>(query: string, variables: Record<string, unknown>): Promise<T> {\n  return this.request<T>(\"POST\", \"/graphql\", { query, variables });\n}\n"
+    },
+    {
+      "path": "poster/src/check.ts",
+      "content": "const write = new GitHub(requireEnv(\"APP_TOKEN\"));\nawait write.request(\"POST\", `/repos/${repo.owner}/${repo.repo}/check-runs`, { name, head_sha: sha, status: \"completed\", conclusion });\n"
     }
   ]
 }

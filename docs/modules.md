@@ -4,7 +4,7 @@ A module is a deterministic check that runs beside the review: a linter, a rule 
 need no model, and a module that fails never blocks the review. The core of the reviewer knows nothing about any one
 module. It hands each the same inputs, reads back one common result, and treats every module the same way.
 
-Two places use module results:
+Three places use module results:
 
 - **In a pull request review**, the modules run in **diff mode**, in parallel with the review. The review (the first
   pass) never sees their output. Afterwards a second, smaller model step, the **rules pass**, reads the review's
@@ -12,6 +12,8 @@ Two places use module results:
   and what is a false positive. The poster merges both into one review; findings from the rules pass are labelled.
 - **In a scheduled or manual run** (scan mode), the modules run in **repository mode** over the whole branch. No model
   runs. The results are kept as the run's `reviewer-modules` artifact and can be sent to a results sink.
+- **In the check workflow** ([check.md](check.md)), the modules run in diff mode on every pull request, with no model
+  and no review. Each module's result becomes a GitHub check, passed or failed by the caller's rule.
 
 Turn modules on in the caller with `modules: <id> <id>…` and each module's own inputs
 ([configuration.md](configuration.md)). This repository ships one module, [Rerail](rerail.md).
@@ -63,6 +65,9 @@ A module writes `$MODULE_OUT/results.json`:
   (letters, digits, `:`, `_`, `-`), and unique within the result. Re-reviews use it to tell fixed from still open.
 - `state` is `new` when the change brought it in, `existing` when the merge base had it already. Existing findings
   are never posted on a pull request. In repository mode everything is `existing`.
+- `baseline` (optional, diff mode) counts the findings the merge base had in the files the change touches, by level:
+  `{ "error": 0, "warning": 2, "note": 1 }`. Count the files the change deleted or renamed away too. The check
+  workflow's `not-more` rule compares the result with it, and fails without it.
 - On failure, write `"status": "failed"` with an `error`, or just exit non-zero.
 
 [schema/module-results.schema.json](../schema/module-results.schema.json) has the full schema. The reviewer checks

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { CiState } from "../src/ci.ts";
-import { decide, type GateConfig, type GateDeps, type PullRequest } from "../src/gate.ts";
+import { decide, decideCheckEvent, type GateConfig, type GateDeps, type PullRequest } from "../src/gate.ts";
 import { DEFAULT_CONFIG, type ReviewConfig } from "../src/review-config.ts";
 import { findingMarker } from "../src/text.ts";
 
@@ -120,6 +120,26 @@ test("pushes and team-request removals do nothing, even on a PR the bot approved
 test("pull_request events are ignored: the PR controls that copy of the caller workflow", async () => {
   const d = await decide("pull_request", { action: "review_requested", sender: human, requested_team: { slug: "reviewer" }, pull_request: pr() }, cfg, deps());
   assert.equal(d.mode, "skip");
+});
+
+test("the check workflow checks every pull_request_target event's pull request, forks, drafts and bots' included", () => {
+  const dependabot = { login: "dependabot[bot]", type: "Bot" };
+  for (const [action, pull, sender] of [
+    ["synchronize", pr(), human],
+    ["opened", pr({ draft: true }, true), human],
+    ["opened", pr({ user: dependabot }), dependabot],
+  ] as const) {
+    const d = decideCheckEvent("pull_request_target", { action, sender, pull_request: pull });
+    assert.deepEqual([d.mode, d.pr, d.headSha, d.baseRef], ["check", 7, "head123", "main"], action);
+  }
+  assert.equal(decideCheckEvent("pull_request_target", { action: "opened", sender: human, pull_request: pr({}, true) }).isFork, true);
+});
+
+test("the check workflow refuses every other event, rather than leave a required check waiting", () => {
+  // pull_request would run the pull request's own copy of the caller, with its own choice of rule.
+  assert.throws(() => decideCheckEvent("pull_request", { action: "synchronize", sender: human, pull_request: pr() }), /pull_request_target only, not pull_request:/);
+  assert.throws(() => decideCheckEvent("issue_comment", comment("@example-reviewer review")), /not issue_comment/);
+  assert.throws(() => decideCheckEvent("pull_request_target", { action: "opened", sender: human }), /names no pull request/);
 });
 
 test("a reply on a bot finding thread is feedback on that finding", async () => {

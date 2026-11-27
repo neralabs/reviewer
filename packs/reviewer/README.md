@@ -22,6 +22,7 @@ An edit to a rule needs approval again; until then it runs in Log.
 | Part | What it owns |
 | --- | --- |
 | `.github/workflows/review.yml` | The product: a reusable workflow with eight jobs (`gate`, `modules`, `send`, `review`, `rules-pass`, `post`, `respond`, `report-failure`). Each job checks out the reviewer source, then runs one command of the poster or the model launcher. Jobs pass data only through artifacts. |
+| `.github/workflows/check.yml` | The check workflow: a second reusable workflow with two jobs (`scan`, `check`) that runs the modules on every pull request, with no model, and posts each result as a GitHub check (`docs/check.md`). |
 | `poster/src/` | All of the logic, in one TypeScript CLI (`cli.ts`) that Node 24 runs directly, with no build step. One runtime dependency, `ajv`. |
 | `scripts/run-claude.sh` | The model launcher: Claude Code with its lockdown flags, for the review and for the rules pass. |
 | `skill/review/`, `prompts/`, `agents/` | What the model reads: the review procedure (system prompt), the prompt templates the poster fills in, and the vendored ECC subagents (MIT, `REUSE.toml`). |
@@ -37,13 +38,14 @@ An edit to a rule needs approval again; until then it runs in Log.
 Inside `poster/src/` the import graph has no cycles and three layers:
 
 - **Pure decision modules**: `commands`, `patterns`, `text`, `diff`, `dependency`, `review-config`, `policy`,
-  `render`, and `gate`, which takes its I/O as `GateDeps`. They import each other and, for types only, `ci.ts`.
+  `render`, `check-policy`, and `gate`, which takes its I/O as `GateDeps`. They import each other and, for types
+  only, `ci.ts` and `modules.ts`.
 - **I/O adapters**: `github` (the GitHub client), `settings` (environment and step outputs), `bot-history`, `ci`,
   `modules` (the module runner), `sink` (the results sink), `agents`, `findings` (loads and validates the model's
   output), `rules-pass`.
-- **Commands**: `prepare`, `post`, `respond`, `module-commands`, and `cli`, which dispatches to them. `post.ts` imports
-  two helpers from `respond.ts`; nothing imports `post.ts` statically, because it pulls in `ajv`, which only the post
-  job installs (`cli.ts` loads it with `await import`).
+- **Commands**: `prepare`, `post`, `respond`, `check`, `module-commands`, and `cli`, which dispatches to them.
+  `post.ts` imports two helpers from `respond.ts`; nothing imports `post.ts` statically, because it pulls in `ajv`,
+  which only the post job installs (`cli.ts` loads it with `await import`).
 
 Across parts: the workflow calls `poster/src/cli.ts` and `scripts/run-claude.sh`; `poster/src/modules.ts` runs
 `modules/<id>/run.sh` as a separate process and reads back `results.json`. No module imports the poster, and the
@@ -55,8 +57,8 @@ built-ins: `modules/package.json` declares no dependencies.
 | Boundary | Where | Holds today |
 | --- | --- | --- |
 | Only the `GitHub` class talks to the GitHub API: no octokit, no `gh`, no `curl` to the API. | `poster/src/github.ts`, on `fetch` | Yes. The only other network calls are the results sink (`poster/src/sink.ts`, `modules/rerail/install.sh`) and package installs. |
-| Only `post` and `respond` write to GitHub (REST writes, GraphQL mutations), with the app token `APP_TOKEN`; every other command reads with the read-only `GITHUB_TOKEN`. | `poster/src/post.ts`, `poster/src/respond.ts`; `APP_TOKEN` is set in `review.yml` for the `post`, `respond` and `report-failure` jobs only | Yes. |
-| The job that reads untrusted pull request content holds no credential that can write. The model process holds no GitHub token, only the chosen provider's key. | `review.yml` (`review`, `rules-pass`); `scripts/run-claude.sh` unsets the other provider's key | Yes. |
+| Only `post`, `respond` and `check` write to GitHub (REST writes, GraphQL mutations), with the app token `APP_TOKEN`; every other command reads with the read-only `GITHUB_TOKEN`. | `poster/src/post.ts`, `poster/src/respond.ts`, `poster/src/check.ts`; `APP_TOKEN` is set in `review.yml` for the `post`, `respond` and `report-failure` jobs, and in `check.yml` for the `check` job, where it can write checks only | Yes. |
+| The job that reads untrusted pull request content holds no credential that can write. The model process holds no GitHub token, only the chosen provider's key. | `review.yml` (`review`, `rules-pass`, `modules`), `check.yml` (`scan`); `scripts/run-claude.sh` unsets the other provider's key | Yes. |
 | The model reads pull request content with read-only tools: no shell, no edits, no web, no MCP, nothing allowed without pre-approval. Subagents get `Read`, `Grep`, `Glob`. | `scripts/run-claude.sh` (`--restricted`, `--permission-mode dontAsk`, `--allowedTools`), the `ALLOWED_TOOLS` override in `review.yml`, `SUBAGENT_TOOLS` in `poster/src/agents.ts` | Yes. |
 | Pull request content is data: checked out without credentials, scrubbed of agent configuration and symlinks, never run. Repository configuration (`REVIEW.md`, `CODEOWNERS`, module rules) comes from the base branch. | `poster/src/prepare.ts` (`scrub`, `git show origin/<base>:…`), `modules/rerail/run.ts` (approves only from `MODULE_BASE_CHECKOUT`) | Yes. |
 | Model output is validated before anything is posted, and the verdict is computed, never taken from the model. | `poster/src/findings.ts` (ajv, strict), `poster/src/text.ts` (`sanitizeModelText`), `poster/src/policy.ts` | Yes for findings. The rules pass's output and module results are checked by hand (`rules-pass.ts`, `modules.ts`); only tests tie those checks to their schemas. |
@@ -84,14 +86,14 @@ input or secret, the `REVIEW.md` settings or the command syntax is breaking.
 - Tests use `node:test` and `node:assert/strict`. `npm test` in `poster/` runs `poster/test/*.test.ts` and
   `modules/*/test/*.test.ts`, and nothing else.
 - Shell scripts start with `set -euo pipefail`; CI runs ShellCheck and actionlint on them and the workflows.
-- Workflows set `permissions` per job (`review.yml` starts from `permissions: {}`), check out with
+- Workflows set `permissions` per job (`review.yml` and `check.yml` start from `permissions: {}`), check out with
   `persist-credentials: false`, and give every job a `timeout-minutes`.
 
 ## Rules
 
 | Group | Rule | What it flags | Mode |
 | --- | --- | --- | --- |
-| GitHub and credentials | `reviewer-github-writes-in-post` | A REST write, a GraphQL mutation or `APP_TOKEN` in `poster/src/` outside `post.ts` and `respond.ts` | Steer |
+| GitHub and credentials | `reviewer-github-writes-in-post` | A REST write, a GraphQL mutation or `APP_TOKEN` in `poster/src/` outside `post.ts`, `respond.ts` and `check.ts` | Steer |
 | GitHub and credentials | `reviewer-github-through-client` | `fetch()` outside `github.ts` and `sink.ts`, the `gh` CLI, or the API's address in the poster, modules, scripts and workflows | Steer |
 | Untrusted input | `reviewer-model-read-only` | A shell, edit, web or MCP tool in the model's allowed tools or `SUBAGENT_TOOLS`, or a permission bypass | Steer |
 | Untrusted input | `reviewer-caller-pull-request-target` | A `pull_request` trigger or `secrets: inherit` in the caller template and the docs | Steer |
@@ -110,9 +112,10 @@ read that file) maps Steer to the `warning` level, and a new warning there is a 
 ### `reviewer-github-writes-in-post`
 
 The review job reads untrusted pull request content and holds only the read-only `GITHUB_TOKEN`; the write
-credential is minted for the post, respond and report-failure jobs alone (`docs/architecture.md`, "Jobs"). In the
-poster that split is two files: `post.ts` and `respond.ts` create the write client from `APP_TOKEN` and make every
-write. The rule flags, anywhere else in `poster/src/`, a `request` or `send` call whose method is `POST`, `PUT`,
+credential is minted for the post, respond and report-failure jobs alone (`docs/architecture.md`, "Jobs"), and for
+the check workflow's check job, which reads only the modules' results. In the poster that split is three files:
+`post.ts`, `respond.ts` and `check.ts` create the write client from `APP_TOKEN` and make every write. The rule flags,
+anywhere else in `poster/src/`, a `request` or `send` call whose method is `POST`, `PUT`,
 `PATCH` or `DELETE`, a GraphQL `mutation` string, and the name `APP_TOKEN`. `github.ts` is the transport and is out of
 scope: its GraphQL queries go out as `POST`.
 
@@ -152,8 +155,9 @@ and this repository's own `ci.yml`, which is not a caller, is out of scope.
 
 ### `reviewer-pure-core`
 
-`commands`, `patterns`, `text`, `diff`, `dependency`, `review-config`, `policy`, `render` and `gate` decide what the
-reviewer does (the gate's decision, the verdict, the rendering) and are tested as plain functions; `gate.ts` takes its
+`commands`, `patterns`, `text`, `diff`, `dependency`, `review-config`, `policy`, `render`, `check-policy` and `gate`
+decide what the reviewer does (the gate's decision, the verdict, the rendering, a check's conclusion) and are tested
+as plain functions; `gate.ts` takes its
 I/O as `GateDeps`. The rule flags in those files an import of a Node I/O built-in (`fs`, `child_process`, `net`,
 `http`, `https`, `os`, `worker_threads` and the like) or of an I/O module of the poster (`github`, `settings`,
 `bot-history`, `ci`, `modules`, `sink`, `agents`, `findings`, `rules-pass` or a command), any use of `process`, and a

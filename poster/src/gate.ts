@@ -7,8 +7,11 @@ import { parseCommand, type Command } from "./commands.ts";
 import { isDependencyAuthor, type ReviewConfig } from "./review-config.ts";
 import { findingIdFromBody } from "./text.ts";
 
-/** `scan`: a scheduled or manual run checks the branch with the modules (repository mode), with no model. */
-export type Mode = "skip" | "review" | "rereview" | "help" | "stop" | "scan";
+/**
+ * `scan`: a scheduled or manual run checks the branch with the modules (repository mode), with no model.
+ * `check`: the check workflow (check.yml): the modules check a pull request's head on every push, with no model.
+ */
+export type Mode = "skip" | "review" | "rereview" | "help" | "stop" | "scan" | "check";
 
 export interface GateConfig {
   repo: { owner: string };
@@ -235,4 +238,20 @@ export async function decide(eventName: string, payload: EventPayload, cfg: Gate
   if (payload.sender?.type === "Bot" && !BOT_EVENTS.includes(eventName)) return skip("event sent by a bot");
   const handler = Object.hasOwn(HANDLERS, eventName) ? HANDLERS[eventName] : undefined;
   return handler ? handler(eventName, payload, cfg, deps) : skip(`event ${eventName} is not handled`);
+}
+
+/**
+ * The check workflow's one decision (check.yml): every pull_request_target event checks that pull request's head
+ * with the modules. Nobody has to ask, and forks and drafts are included: a required check has to report on every
+ * pull request, and the modules read the head as data with their rules from the base branch. Any other event is
+ * refused out loud. On pull_request GitHub runs the pull request's own copy of the caller, which could change the
+ * rule it is checked by, and a caller that quietly did nothing would leave a required check waiting for ever.
+ */
+export function decideCheckEvent(eventName: string, payload: EventPayload): Decision {
+  if (eventName !== "pull_request_target") {
+    throw new Error(`the check workflow runs on pull_request_target only, not ${eventName}: that event runs the caller from the base branch, so a pull request can't change the rule it is checked by`);
+  }
+  const pr = payload.pull_request;
+  if (!pr) throw new Error("the pull_request_target event names no pull request");
+  return { mode: "check", reason: `pull_request_target.${payload.action ?? "?"}`, ...target(pr, payload.sender?.login ?? "") };
 }

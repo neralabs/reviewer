@@ -42,6 +42,16 @@
           "state": { "description": "new: the change brought it in. existing: the merge base had it. Always existing in repository mode.", "enum": ["new", "existing"] }
         }
       }
+    },
+    "baseline": {
+      "description": "Diff mode, optional: how many findings of each level the merge base had in the files the change touches (the files this result covers, and those the change deleted or renamed away). A check that compares the change with its base needs it.",
+      "type": "object",
+      "required": ["error", "warning", "note"],
+      "properties": {
+        "error": { "type": "integer", "minimum": 0 },
+        "warning": { "type": "integer", "minimum": 0 },
+        "note": { "type": "integer", "minimum": 0 }
+      }
     }
   },
   "definitions": {

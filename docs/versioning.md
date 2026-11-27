@@ -34,6 +34,8 @@ same way:
 - **`REVIEW.md` settings**: a setting is removed or renamed, or its format or meaning changes.
 - **The findings schema** ([schema/](../schema/)): a field is removed or renamed, or its type or meaning changes.
 - **Command syntax**: a comment command is removed, renamed, or takes different arguments.
+- **The check workflow** ([check.md](check.md)): the form of a check's name (`<module id> (<base branch>)`) changes,
+  or a `rule` is removed, renamed or changes what passes.
 
 New optional inputs, settings, fields and commands are minor releases. Fixes, prompt changes and dependency updates
 are patch releases. Before 1.0.0, a minor version may break, and its release notes say how.

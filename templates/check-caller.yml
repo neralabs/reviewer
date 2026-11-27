@@ -1,0 +1,37 @@
+# Copy to .github/workflows/reviewer-check.yml in a repo that wants its modules (for example its Rerail rules) as a
+# check on every pull request: no model, no review. Beside, not instead of, .github/workflows/reviewer.yml.
+# docs/check.md has the rules, the app permission this needs, and how to require the check.
+name: reviewer-check
+
+on:
+  # pull_request_target, not pull_request: GitHub then runs this file from the base branch, so a PR can't change
+  # the rule it is checked by. Safe here because nothing from the PR is executed: the modules read it as data,
+  # with their rules from the base branch. Fork PRs are checked too.
+  # `edited` is for a PR moved to another base branch: the check is for one base, so the new one needs its own.
+  # It also fires when the title or description changes, which costs a scan and changes nothing.
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, edited]
+
+# Read-only. The check is written with the neralabs-reviewer token the workflow mints for that job.
+permissions:
+  contents: read
+
+jobs:
+  check:
+    uses: neralabs/reviewer/.github/workflows/check.yml@main
+    with:
+      app_client_id: ${{ vars.REVIEWER_APP_CLIENT_ID }}
+      reviewer_ref: main # keep equal to the @ref above
+      modules: rerail # one check each, named `<module> (<base branch>)`: on main, require `rerail (main)`
+      # When the check passes. Errors and warnings count (for Rerail: rules in Block and Steer); notes never do.
+      #   no-new    the change adds none
+      #   not-more  the files the change touches have no more than on the merge base
+      #   zero      the files the change touches have none
+      rule: no-new
+      # rerail_package: "@neralabs/rerail@<version>" # optional; left out, the Rerail release the reviewer pins
+      # rerail_packs: "" # pack ids; empty, .rerail/packs.json decides; set, they replace its packs (docs/rerail.md)
+      # rerail_repo_packs: "" # packs in this repo, paths from its root (approved from the base branch only); likewise
+    # Name each secret instead of `secrets: inherit`, which would hand the workflow every secret this repo can see.
+    # Dependabot's PRs get only Dependabot secrets: store the app key there too.
+    secrets:
+      REVIEWER_APP_PRIVATE_KEY: ${{ secrets.REVIEWER_APP_PRIVATE_KEY }}

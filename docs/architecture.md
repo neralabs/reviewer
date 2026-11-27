@@ -71,6 +71,11 @@ The poster merges the two. The model doesn't decide what the merge does:
 A `schedule` or `workflow_dispatch` from the caller runs only the modules, in repository mode, with no model. The
 results stay in the run's `reviewer-modules` artifact, and are sent to the results sink when `send_results` is on.
 
+The check workflow ([check.md](check.md)) is a second reusable workflow, `check.yml`, with two jobs of its own, `scan`
+and `check`. It runs the same modules in diff mode on every pull request, with no model, and posts each module's
+result as a GitHub check that a ruleset can require. It shares the module runner with the review and nothing else:
+a review and a check of the same commit each do their own scan, and the check never reads the rules pass.
+
 ## Context bundle
 
 `prepare` writes, before the model starts:

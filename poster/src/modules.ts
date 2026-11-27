@@ -46,6 +46,11 @@ export interface ModuleResult {
   /** Every check the module ran, with its level: the only ids a finding may cite. */
   checks: { id: string; level: ModuleLevel }[];
   findings: ModuleFinding[];
+  /**
+   * Diff mode, optional: how many findings of each level the merge base had in the files the change touches. A
+   * check that compares the change with its base (check-policy.ts, `not-more`) can't be decided without it.
+   */
+  baseline?: Record<ModuleLevel, number>;
 }
 
 const MODULE_ID = /^[a-z][a-z0-9-]{0,39}$/;
@@ -96,6 +101,13 @@ function checksProblem(r: ModuleResult): string | undefined {
   return bad ? `a check is not a plain id with a level (${JSON.stringify(bad).slice(0, 100)})` : undefined;
 }
 
+function baselineProblem(r: ModuleResult): string | undefined {
+  if (r.baseline === undefined) return undefined;
+  const baseline = r.baseline as Record<string, unknown> | null;
+  const counted = typeof baseline === "object" && baseline !== null && LEVELS.every((l) => Number.isInteger(baseline[l]) && (baseline[l] as number) >= 0);
+  return counted ? undefined : "the baseline is not a count of errors, warnings and notes";
+}
+
 function headerProblem(r: ModuleResult, module: string, mode: ModuleMode): string | undefined {
   if (r?.schema !== MODULE_RESULTS_SCHEMA) return `results.json is not ${MODULE_RESULTS_SCHEMA}`;
   if (r.module !== module || r.mode !== mode) return `results.json is for ${r.module} in ${r.mode} mode`;
@@ -104,7 +116,7 @@ function headerProblem(r: ModuleResult, module: string, mode: ModuleMode): strin
 
 function statusProblem(r: ModuleResult): string | undefined {
   if (r.status === "failed") return typeof r.error === "string" ? r.error : "the module reported a failure";
-  return r.status === "completed" ? checksProblem(r) : `status ${JSON.stringify(r.status)}`;
+  return r.status === "completed" ? (checksProblem(r) ?? baselineProblem(r)) : `status ${JSON.stringify(r.status)}`;
 }
 
 function parseJson(text: string): ModuleResult | undefined {
@@ -128,13 +140,17 @@ export function parseModuleResult(text: string, module: string, mode: ModuleMode
   const bad = r.findings.map((f, i) => [i, findingProblem(f, module, checks)] as const).find(([, why]) => why);
   if (bad) return failedResult(module, mode, `finding ${bad[0]} ${bad[1]}`);
   const findings = r.findings.map((f) => ({ ...f, message: f.message.slice(0, MAX_MESSAGE), state: mode === "repository" ? ("existing" as const) : f.state }));
-  return { schema: MODULE_RESULTS_SCHEMA, module, version: String(r.version ?? ""), mode, status: "completed", checks: r.checks, findings };
+  // Only what the contract names: a count per level, and only where there is a base to count on.
+  const baseline = mode === "diff" && r.baseline ? { baseline: { error: r.baseline.error, warning: r.baseline.warning, note: r.baseline.note } } : {};
+  return { schema: MODULE_RESULTS_SCHEMA, module, version: String(r.version ?? ""), mode, status: "completed", checks: r.checks, findings, ...baseline };
 }
 
 /** The checkouts and shas a module gets. */
 export interface ModuleTarget {
   mode: ModuleMode;
   checkout: string;
+  /** The commit in `checkout`: what the modules checked. */
+  headSha: string;
   baseCheckout: string;
   baseSha: string;
   mergeBase: string;
@@ -150,15 +166,16 @@ function git(cwd: string, args: string[]): string {
  */
 export function moduleTarget(work: string, mode: ModuleMode, baseRef: string | undefined): ModuleTarget {
   const checkout = resolve(work, "pr");
-  const head = git(checkout, ["rev-parse", "HEAD"]);
-  if (mode === "repository") return { mode, checkout, baseCheckout: checkout, baseSha: head, mergeBase: head };
+  const headSha = git(checkout, ["rev-parse", "HEAD"]);
+  if (mode === "repository") return { mode, checkout, headSha, baseCheckout: checkout, baseSha: headSha, mergeBase: headSha };
   if (!baseRef) throw new Error("diff mode needs the base ref");
-  const baseSha = git(checkout, ["rev-parse", `origin/${baseRef}^{commit}`]);
+  // The full ref: a tag someone pushed as `origin/<base>` would win over the branch under the short name.
+  const baseSha = git(checkout, ["rev-parse", `refs/remotes/origin/${baseRef}^{commit}`]);
   const mergeBase = git(checkout, ["merge-base", baseSha, "HEAD"]);
   // Absolute: git resolves a relative worktree path against the checkout, not this process.
   const baseCheckout = resolve(work, "base-tip");
   if (!existsSync(baseCheckout)) git(checkout, ["worktree", "add", "--quiet", "--detach", "--force", baseCheckout, baseSha]);
-  return { mode, checkout, baseCheckout, baseSha, mergeBase };
+  return { mode, checkout, headSha, baseCheckout, baseSha, mergeBase };
 }
 
 export interface RunOptions {

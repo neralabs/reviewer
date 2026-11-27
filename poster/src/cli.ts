@@ -9,13 +9,16 @@
 //   modules                modules job: run the caller's modules (module-commands.ts)
 //   rules-pass-prepare     rules-pass job: the second model step's inputs
 //   send <kind>            send job: module results to the results sink
+//   check-gate             check workflow's scan job: writes gate.json for a pull request to check (check.yml)
+//   check                  check workflow's check job: the modules' results as GitHub check runs (check.ts)
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildAgents } from "./agents.ts";
 import { listReviews } from "./bot-history.ts";
 import { ciAt, ownCheckSuite } from "./ci.ts";
-import { decide, type GateDeps, type PullRequest } from "./gate.ts";
+import { checkCommand } from "./check.ts";
+import { decide, decideCheckEvent, type GateDeps, type PullRequest } from "./gate.ts";
 import { fileAt, GitHub, GitHubError } from "./github.ts";
 import { parseReviewConfig } from "./review-config.ts";
 import { prepare } from "./prepare.ts";
@@ -59,6 +62,15 @@ async function gate(s: Settings): Promise<void> {
   if (decision.mode !== "skip") appendSummary(`Gate: **${decision.mode}** for #${decision.pr}: ${decision.reason}.`);
 }
 
+/** The check workflow needs no token to decide: the event itself names the pull request. */
+function checkGate(s: Settings): void {
+  const payload = JSON.parse(readFileSync(requireEnv("GITHUB_EVENT_PATH"), "utf8"));
+  const decision = decideCheckEvent(requireEnv("GITHUB_EVENT_NAME"), payload);
+  mkdirSync(s.work, { recursive: true });
+  writeFileSync(join(s.work, "gate.json"), `${JSON.stringify(decision, null, 2)}\n`);
+  appendSummary(`Check for #${decision.pr}: ${decision.reason}.`);
+}
+
 // Needs no repo settings: the review job runs it on the transcript whatever state the run ended in, so a
 // file the run never wrote is skipped, as the upload skips it.
 function redact(args: string[]): void {
@@ -94,6 +106,8 @@ const WITH_SETTINGS: Record<string, (s: Settings, args: string[]) => void | Prom
     return post(s);
   },
   respond: (s, [mode]) => respond(s, need(mode, "respond <mode>")),
+  "check-gate": (s) => checkGate(s),
+  check: (s) => checkCommand(s),
 };
 
 async function main(): Promise<void> {

@@ -72,6 +72,33 @@ Secrets: GitHub gives a run started by Dependabot only Dependabot secrets. Its d
   as failed as a whole.
 - **The results sink** gets only the modules' records, from a job holding only its URL and token.
 
+## The check workflow
+
+`check.yml` ([check.md](check.md)) runs the modules on every pull request without anyone asking, fork pull requests
+included, and posts each result as a check that a ruleset can require.
+
+- **Nothing from the pull request runs.** The modules read its files as data and take their rules from the base
+  branch, as in a review (above). No model is involved, so no model output reaches the check.
+- **The job that reads the pull request holds no app key.** The `scan` job has a read-only token and the modules'
+  own inputs. The `check` job holds an app token that can write checks and nothing else. It reads only the modules'
+  results, re-checked against the module contract, and runs the reviewer source as the scan job uploaded it before
+  the pull request was checked out.
+- **The rule comes from the base branch.** The workflow handles `pull_request_target` only and fails on any other
+  event, so a pull request can't run its own copy of the caller with a weaker rule.
+- **A check is for one base branch, and says so in its name** (`rerail (main)`). A check run belongs to a commit,
+  and the same commit can be the head of a second pull request into a branch with older rules or a weaker `rule`,
+  or of one that is later moved to `main`. With the module's id alone as the name, a pass against that branch would
+  satisfy `main`'s required check. The base comes from the event, written down before the pull request is checked
+  out. The module's own base lookup uses the full ref `refs/remotes/origin/<base>`, which a tag pushed as
+  `origin/<base>` can't stand in for.
+- **What is posted:** counts, check ids as code, and each finding's message as plain annotation text with
+  credentials redacted. A module's error is shown as code.
+- **Require the check from the app.** A workflow's own `GITHUB_TOKEN` can create a check with any name, so a ruleset
+  that requires `rerail (main)` from any source could be satisfied by a pull request's own workflow. Set the app as
+  the required check's source.
+- **Limit:** the check reports what the module found. A scanner that a crafted file could make miss a finding would
+  let that finding through, as with any scanner.
+
 ## Output sanitisation and redaction
 
 The poster validates `findings.json` against the schema, then passes every model string it posts through one sanitiser: the summary, findings, earlier findings' evidence (including the "Marked moot" thread reply), the escalation and risk reasons, and suggested `REVIEW.md` lines. It:
@@ -96,14 +123,15 @@ The review job uploads the Claude Code session as the `reviewer-transcript` arti
 - Replies in finding threads on fork PRs are ignored: GitHub gives `pull_request_review_comment` runs from forks no secrets. A top-level `rereview` comment works instead.
 - A top-level comment command from someone with write access reviews a fork PR. The model reads the fork's code but never runs it.
 - Fork PRs are never approved.
+- The check workflow checks fork PRs like any other: it reads their files as data, with the base branch's rules.
 
 ## pull_request_target only
 
-PR events are accepted only as `pull_request_target` (and `workflow_run`, below), which runs the caller workflow from the base branch. On `pull_request`, GitHub runs the PR's own copy of the caller, so a PR could rewrite its reviewer configuration (turn approvals on, point at another reviewer ref) and approve itself. The gate ignores `pull_request`. `pull_request_target` is safe here only because nothing from the PR is executed; keep it that way in any change to the workflow. `workflow_run` likewise runs the caller from the default branch. The gate takes only the run's PR number and head SHA from it, re-reads the PR from the API, and reviews only a listed dependency bot's PR.
+PR events are accepted only as `pull_request_target` (and `workflow_run`, below), which runs the caller workflow from the base branch. On `pull_request`, GitHub runs the PR's own copy of the caller, so a PR could rewrite its reviewer configuration (turn approvals on, point at another reviewer ref) and approve itself. The gate ignores `pull_request`, and the check workflow fails on it. `pull_request_target` is safe here only because nothing from the PR is executed; keep it that way in any change to the workflow. `workflow_run` likewise runs the caller from the default branch. The gate takes only the run's PR number and head SHA from it, re-reads the PR from the API, and reviews only a listed dependency bot's PR.
 
 ## Per-job scoped app tokens
 
-The workflow sets `permissions: {}` at the top and grants each job only what it needs. The gate and review jobs use the read-only `GITHUB_TOKEN`. Jobs that write mint their own short-lived app token, scoped to the calling repository: `pull-requests: write`, `contents: read`, and `members: read` where the job changes team review requests. No token the workflow mints can push code, even when the app has **Contents** read and write so that its approvals count. The model credential reaches only the Claude Code step, and only the chosen provider's key does.
+The workflow sets `permissions: {}` at the top and grants each job only what it needs. The gate and review jobs use the read-only `GITHUB_TOKEN`. Jobs that write mint their own short-lived app token, scoped to the calling repository: `pull-requests: write`, `contents: read`, and `members: read` where the job changes team review requests. The check workflow's `check` job mints one with `checks: write` alone. No token the workflows mint can push code, even when the app has **Contents** read and write so that its approvals count. The model credential reaches only the Claude Code step, and only the chosen provider's key does.
 
 Give the app no permission beyond those listed in the [quickstart](../README.md#quickstart), and scope the model key to invoking the configured model only. [infra/bedrock.yml](../infra/bedrock.yml) shows this for Bedrock.
 

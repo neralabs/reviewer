@@ -5,7 +5,8 @@
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 export RERAIL_HOME="$MODULE_HOME/rerail-home"
-bash "$here/install.sh"
+# From the module's own folder, not the checkout this script starts in: an install reads nothing from the change.
+(cd "$MODULE_HOME" && bash "$here/install.sh")
 # install.sh needed the sink's secrets to download Rerail; nothing after it does.
 unset RESULTS_SINK_URL RESULTS_SINK_TOKEN RERAIL_PACKAGE_URL
 exec node "$here/run.ts"
